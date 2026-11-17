@@ -22,9 +22,9 @@ export function createAudio() {
     if (ctx.state === 'suspended') ctx.resume();
   }
 
-  function envelope(gain, at, peak, dur) {
+  function envelope(gain, at, peak, dur, attack = 0.004) {
     gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(peak, at + 0.004);
+    gain.gain.exponentialRampToValueAtTime(peak, at + attack);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
   }
 
@@ -41,27 +41,31 @@ export function createAudio() {
     osc.stop(at + dur + 0.02);
   }
 
-  function noise(dur, { gain = 0.3, freq = 1500, type = 'bandpass', q = 1, delay = 0 } = {}) {
+  function noise(dur, { gain = 0.3, freq = 1500, type = 'bandpass', q = 1, delay = 0, attack = 0.004, sweepTo = 0 } = {}) {
     const at = ctx.currentTime + delay;
     const src = ctx.createBufferSource();
     src.buffer = noiseBuffer;
     const filter = ctx.createBiquadFilter();
     filter.type = type;
-    filter.frequency.value = freq;
+    filter.frequency.setValueAtTime(freq, at);
+    if (sweepTo) filter.frequency.exponentialRampToValueAtTime(sweepTo, at + dur);
     filter.Q.value = q;
     const g = ctx.createGain();
-    envelope(g, at, gain, dur);
+    envelope(g, at, gain, dur, attack);
     src.connect(filter).connect(g).connect(master);
     src.start(at);
     src.stop(at + dur + 0.02);
   }
 
   const SOUNDS = {
-    hit: () => { noise(0.06, { gain: 0.5, freq: 1900, q: 0.8 }); tone(240, 0.08, { type: 'triangle', gain: 0.35, to: 110 }); },
-    slice: () => { noise(0.09, { gain: 0.35, freq: 2600, q: 1.5 }); tone(200, 0.06, { type: 'triangle', gain: 0.2, to: 120 }); },
-    smash: () => { noise(0.08, { gain: 0.7, freq: 1500, q: 0.6 }); tone(300, 0.11, { type: 'triangle', gain: 0.5, to: 90 }); },
+    // ball strikes: a short hollow "pock", mostly tone with only a whisper of noise
+    hit: () => { tone(560, 0.05, { gain: 0.28, to: 330 }); noise(0.025, { gain: 0.1, freq: 3200, q: 2 }); },
+    serve: () => { tone(600, 0.06, { gain: 0.32, to: 340 }); noise(0.03, { gain: 0.12, freq: 3200, q: 2 }); },
+    slice: () => { tone(430, 0.05, { gain: 0.22, to: 280 }); noise(0.04, { gain: 0.09, freq: 3600, q: 2 }); },
+    smash: () => { tone(470, 0.07, { gain: 0.36, to: 240 }); noise(0.035, { gain: 0.16, freq: 2600, q: 1.6 }); },
     bounce: () => { tone(170, 0.09, { gain: 0.3, to: 80 }); noise(0.04, { gain: 0.12, freq: 700, type: 'lowpass' }); },
-    slide: () => { noise(0.42, { gain: 0.16, freq: 900, q: 0.7 }); noise(0.3, { gain: 0.08, freq: 2600, q: 1.2, delay: 0.04 }); },
+    // shoes scraping across clay: fades in, no hard edge
+    slide: () => { noise(0.5, { gain: 0.07, freq: 1400, sweepTo: 600, type: 'lowpass', q: 0.5, attack: 0.09 }); },
     net: () => { noise(0.22, { gain: 0.3, freq: 500, type: 'lowpass' }); tone(120, 0.12, { gain: 0.15, to: 70 }); },
     perfect: () => { tone(1320, 0.1, { gain: 0.1 }); tone(1980, 0.14, { gain: 0.07, delay: 0.05 }); },
     fault: () => { tone(210, 0.22, { type: 'square', gain: 0.09 }); },

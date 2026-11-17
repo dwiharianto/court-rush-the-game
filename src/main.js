@@ -19,6 +19,7 @@ function makePlayer(side, speed) {
     action: 'ready', actionT: 0,
     swing: null, // { kind, hand, plan, done }
     slide: false, slideT: 0, slideX: 0, slideZ: 0, // a slide in progress and where it started
+    chaseT: 0, // seconds spent running near top speed
   };
 }
 
@@ -55,16 +56,11 @@ export function createGame(options = {}) {
   // ------------------------------------------------------------ movement
   function drive(p, wx, wz, top, dt) {
     const speed = Math.hypot(p.vx, p.vz);
-    if (!p.slide && speed >= PLAYER.slideMinSpeed) {
-      // braking or cutting hard at speed: the feet slide instead of stopping dead
-      // a hard reversal is a plant and push-off, not a slide
+    p.chaseT = speed >= p.speed * PLAYER.chaseSpeed ? p.chaseT + dt : 0;
+    if (!p.slide && p.chaseT >= PLAYER.slideSprintTime) {
+      // braking hard out of a long sprint slides; a hard reversal plants and pushes off instead
       const along = (wx * top * p.vx + wz * top * p.vz) / speed;
-      if (along < speed * PLAYER.slideTrigger && along > -speed * PLAYER.slideReverseLimit) {
-        p.slide = true;
-        p.slideT = 0;
-        p.slideX = p.x; p.slideZ = p.z;
-        events.push({ type: 'slide', side: p.side, x: p.x, z: p.z, speed });
-      }
+      if (along < speed * PLAYER.slideTrigger && along > -speed * PLAYER.slideReverseLimit) startSlide(p);
     }
     if (p.slide) {
       p.slideT += dt;
@@ -85,6 +81,13 @@ export function createGame(options = {}) {
     if (Math.abs(p.x) > PLAYER.maxX) { p.x = Math.sign(p.x) * PLAYER.maxX; p.vx = 0; }
     if (d < PLAYER.minZ) { p.z = p.sign * PLAYER.minZ; p.vz = 0; }
     if (d > PLAYER.maxZ) { p.z = p.sign * PLAYER.maxZ; p.vz = 0; }
+  }
+
+  function startSlide(p) {
+    p.slide = true;
+    p.slideT = 0;
+    p.slideX = p.x; p.slideZ = p.z;
+    events.push({ type: 'slide', side: p.side, x: p.x, z: p.z, speed: Math.hypot(p.vx, p.vz) });
   }
 
   function endSlide(p, silent = false) {
@@ -124,7 +127,7 @@ export function createGame(options = {}) {
     server.z = server.sign * (COURT.halfLength + SERVE.standBehind);
     receiver.x = -sx * SERVE.receiverX;
     receiver.z = receiver.sign * (COURT.halfLength + SERVE.receiverBehind);
-    for (const p of players) { p.vx = p.vz = 0; endSlide(p, true); }
+    for (const p of players) { p.vx = p.vz = 0; p.chaseT = 0; endSlide(p, true); }
     setAction(server, 'serveReady');
     setAction(receiver, 'ready');
     ball.visible = true;
@@ -221,6 +224,8 @@ export function createGame(options = {}) {
     else p.action = hand > 0 ? 'forehand' : 'backhand';
     p.actionT = 0;
     p.swing = { kind: smash ? 'smash' : kind, hand, plan, volley, done: false };
+    // swinging at the end of a long chase slides into the shot
+    if (!p.slide && !smash && p.chaseT >= PLAYER.slideChaseTime) startSlide(p);
   }
 
   function launch(p, tx, tz, kind, speed, volley = false) {
@@ -547,7 +552,7 @@ async function boot() {
         case 'hit':
           world.setSpeed(e.kmh);
           views[1 - e.side].splitStep(); // the opponent reacts with a split step
-          audio.play(e.kind === 'smash' || e.kind === 'serve' ? 'smash' : e.kind === 'slice' ? 'slice' : 'hit');
+          audio.play(e.kind === 'smash' ? 'smash' : e.kind === 'serve' ? 'serve' : e.kind === 'slice' ? 'slice' : 'hit');
           break;
         case 'timing':
           hud.showTiming(e.kind, e.smash ? 'SMASH' : e.volley ? 'VOLLEY' : '');

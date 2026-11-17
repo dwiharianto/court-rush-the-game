@@ -101,12 +101,15 @@ export const PLAYER = {
   minZ: 1.2,
   maxZ: 16.5,
   maxX: 8.6,
-  // Sliding: braking or turning hard at speed turns into a slide on the clay.
-  slideMinSpeed: 3.8, // m/s needed to start a slide
-  slideTrigger: 0.5, // slide when the wanted speed along the run drops below this fraction
-  slideDecel: 12, // m/s^2 while sliding (a normal stop is much quicker)
+  // Sliding happens only at the end of a real chase: running near top speed for a while,
+  // then swinging at the ball, or braking hard out of a long sprint. Normal stops are quick.
+  chaseSpeed: 0.8, // fraction of top speed that counts as chasing
+  slideChaseTime: 0.45, // seconds of chasing before a swing slides into the shot
+  slideSprintTime: 1.0, // seconds of chasing before braking turns into a slide
+  slideTrigger: 0.3, // braking: wanted speed along the run below this fraction of speed
+  slideReverseLimit: 0.3, // wanting to go back the other way: plant and push off, no slide
+  slideDecel: 12, // m/s^2 while sliding
   slideDecelReverse: 24, // m/s^2 when pushing back the other way mid-slide
-  slideReverseLimit: 0.3, // wanting to go back the other way faster than this fraction of speed: no slide
   slideEndSpeed: 0.8,
 };
 

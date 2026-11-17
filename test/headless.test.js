@@ -222,7 +222,7 @@ test('a ball on the player\'s left is a backhand, and slice at the net is a drop
 });
 
 // ---------------------------------------------------------------- sliding
-function runThenRelease(heldAfter) {
+function runThenRelease(heldAfter, runSeconds = 1.5) {
   const g = createGame({ rng: seededRng(4), firstServer: 1 });
   g.start();
   g.state = 'pointOver'; // free movement, no serve logic
@@ -230,7 +230,7 @@ function runThenRelease(heldAfter) {
   Object.assign(p, { x: -6, z: 13, vx: 0, vz: 0 });
   const log = [];
   const run = { x: 1, y: 0, drive: false, slice: false, lob: false };
-  for (let i = 0; i < 120 * 1.5; i++) { g.timer = 9; g.step(BALL.fixedDt, run); } // full sprint to the right
+  for (let i = 0; i < 120 * runSeconds; i++) { g.timer = 9; g.step(BALL.fixedDt, run); } // sprint to the right
   const startX = p.x;
   g.events.length = 0;
   for (let i = 0; i < 120 * 1.5; i++) {
@@ -242,9 +242,11 @@ function runThenRelease(heldAfter) {
   return { log, travel: p.x - startX, p };
 }
 
-test('stopping from a sprint slides on the clay, reversing does not', () => {
+test('only braking out of a long sprint slides; short runs and reversals stop on their feet', () => {
+  const short = runThenRelease({ x: 0, y: 0 }, 0.5);
+  assert.equal(short.log.some((e) => e.type === 'slide'), false, 'a short run stops without sliding');
   const stop = runThenRelease({ x: 0, y: 0 });
-  assert.ok(stop.log.some((e) => e.type === 'slide'), 'letting go at full speed starts a slide');
+  assert.ok(stop.log.some((e) => e.type === 'slide'), 'braking out of a long sprint starts a slide');
   const end = stop.log.find((e) => e.type === 'slideEnd');
   assert.ok(end && end.x1 - end.x0 > 0.8, `the slide carries the player on (${end && (end.x1 - end.x0).toFixed(2)} m)`);
   assert.equal(stop.p.slide, false, 'the slide ends');
