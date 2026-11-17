@@ -114,7 +114,14 @@ export const PLAYER = {
 };
 
 export const AUDIO = {
-  volume: 0.5,
+  volume: 0.6,
+  reverb: 0.22, // send into the stadium reverb
+  crowd: 1, // crowd bus
+  levels: {
+    strike: 1.15, bounce: 0.75, net: 1.2, slide: 0.33, perfect: 0.085,
+    chatter: 0.33, hush: 0.06, // crowd murmur between points and during play
+    applause: 0.82, cheer: 0.41, groan: 0.42,
+  },
 };
 
 export const SWING = {

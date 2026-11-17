@@ -512,6 +512,7 @@ async function boot() {
     if (paused || !inMatch()) return;
     paused = true;
     input.clear();
+    audio.pause();
     const m = game.match;
     const labels = pointLabels(m);
     hud.showPause(`${NAMES.player} ${m.games[0]} : ${m.games[1]} ${NAMES.cpu}   (${labels[0]} : ${labels[1]})`);
@@ -520,12 +521,14 @@ async function boot() {
     if (!paused) return;
     paused = false;
     input.clear();
+    audio.resume();
     hud.hidePause();
   }
   hud.onPause(pause);
   hud.onResume(resume);
   hud.onQuit(() => {
     paused = false;
+    audio.resume();
     hud.hidePause();
     hud.hideMessage();
     game = createGame();
@@ -536,13 +539,41 @@ async function boot() {
     hud.showMenu();
     window.courtRush.game = game;
   });
+  // sound on or off: M, or the button on the pause screen; remembered on this device
+  let muted = false;
+  try { muted = localStorage.getItem('courtRush.muted') === '1'; } catch { /* storage blocked */ }
+  function setMuted(m) {
+    muted = m;
+    audio.setMuted(m);
+    hud.setSound(!m);
+    try { localStorage.setItem('courtRush.muted', m ? '1' : '0'); } catch { /* storage blocked */ }
+  }
+  setMuted(muted);
+  hud.onSound(() => setMuted(!muted));
   window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyM') { setMuted(!muted); return; }
     if (e.code !== 'KeyP' && e.code !== 'Escape') return;
     e.preventDefault();
     if (paused) resume(); else pause();
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
   window.addEventListener('blur', pause);
+
+  // The crowd: applause sized to the point, cheers for your winners, a groan at your errors.
+  function crowdReact(e) {
+    const rally = Math.min(1, e.rallyHits / 12);
+    const clean = e.reason === 'ace' || e.reason === 'double';
+    const game = e.game ? 0.15 : 0;
+    if (e.winner === 0) {
+      if (clean) audio.react('cheer', 0.45 + 0.4 * rally + game);
+      else audio.react('applause', 0.3 + 0.45 * rally + game);
+    } else if (clean) {
+      audio.react('applause', 0.25 + 0.5 * rally + game);
+    } else {
+      audio.react('groan', 0.4 + 0.5 * rally);
+      if (rally > 0.4 || game) audio.react('applause', 0.2 + 0.4 * rally + game);
+    }
+  }
 
   const REASON = { out: 'OUT', net: 'NET', double: 'WINNER', ace: 'ACE', doubleFault: 'DOUBLE FAULT' };
 
@@ -552,31 +583,34 @@ async function boot() {
         case 'hit':
           world.setSpeed(e.kmh);
           views[1 - e.side].splitStep(); // the opponent reacts with a split step
-          audio.play(e.kind === 'smash' ? 'smash' : e.kind === 'serve' ? 'serve' : e.kind === 'slice' ? 'slice' : 'hit');
+          audio.play('strike', {
+            kind: e.volley ? 'volley' : e.kind === 'drive' || e.kind === 'lob' ? 'hit' : e.kind,
+            power: e.kmh / 140, x: game.players[e.side].x, z: game.players[e.side].z,
+          });
           break;
         case 'timing':
           hud.showTiming(e.kind, e.smash ? 'SMASH' : e.volley ? 'VOLLEY' : '');
           if (e.kind === 'perfect') audio.play('perfect');
           break;
         case 'slide':
-          audio.play('slide');
+          audio.play('slide', { speed: e.speed, x: e.x, z: e.z });
           break;
         case 'slideEnd':
           world.addSlideTrail(e.x0, e.z0, e.x1, e.z1);
           break;
         case 'bounce':
           world.addBounceMark(e.x, e.z);
-          audio.play('bounce');
+          audio.play('bounce', { speed: e.v, x: e.x, z: e.z });
           break;
         case 'net':
-          audio.play('net');
+          audio.play('net', { x: game.ball.x, z: 0 });
           break;
         case 'serveReady':
           showScore();
           break;
         case 'fault':
           hud.showMessage('FAULT', 'SECOND SERVE', 1.2);
-          audio.play('fault');
+          audio.react('groan', 0.1); // a murmur at a missed first serve
           break;
         case 'point': {
           showScore();
@@ -594,7 +628,7 @@ async function boot() {
             }
           }
           hud.showMessage(REASON[e.reason] || 'POINT', sub, 1.6);
-          audio.play(e.winner === 0 ? 'pointWon' : 'pointLost');
+          if (!e.set) crowdReact(e);
           break;
         }
         case 'matchOver': {
@@ -606,7 +640,8 @@ async function boot() {
             detail: `${NAMES.player} ${e.games[0]} : ${e.games[1]} ${NAMES.cpu}`,
             button: 'Play again',
           });
-          audio.play(won ? 'matchWon' : 'matchLost');
+          if (won) audio.react('ovation');
+          else audio.react('applause', 1);
           break;
         }
         default:
@@ -670,6 +705,10 @@ async function boot() {
     }
     if (dustClock > 0.2) dustClock = 0.2;
     world.updateFx(dt);
+    // the crowd settles as a player gets ready to serve and stays quiet through the rally
+    const st = game.state;
+    audio.setCrowd(st === 'serveReady' || st === 'toss' || st === 'rally' ? 'hush' : 'chatter');
+    audio.update(dt);
     world.setClock(matchTime);
     world.updateCamera(dt, game.players[0].x);
     renderer.render(world.scene, world.camera);

@@ -61,11 +61,12 @@ export function stepBall(b, dt, events) {
         b.vx *= k;
         b.vz *= k;
       } else {
+        const impact = -b.vy;
         b.vy = -b.vy * (b.spin === 'slice' ? BALL.sliceBounce : BALL.bounce);
         b.vx *= BALL.friction;
         b.vz *= BALL.friction;
         b.bounces++;
-        if (events) events.push({ type: 'bounce', x: b.x, z: b.z, n: b.bounces });
+        if (events) events.push({ type: 'bounce', x: b.x, z: b.z, n: b.bounces, v: impact });
       }
     }
   }

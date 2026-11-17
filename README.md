@@ -20,7 +20,7 @@ npm run build    # static build in dist/
 - At the net (inside about 8.5 m), a ball that has not bounced is volleyed. Space volleys, K plays a drop volley.
 - Sliding happens only at the end of a real chase: swinging after running flat out slides into the shot, and braking out of a long sprint slides to a stop. Short moves and reversals stop on your feet.
 - Serve: press once to toss, again near the top of the toss.
-- P or Esc pauses. The game also pauses when the tab loses focus.
+- P or Esc pauses. The game also pauses when the tab loses focus. M turns sound on or off.
 - Touch devices get a stick and HIT, SLICE, LOB buttons.
 
 ## Code
@@ -35,6 +35,7 @@ npm run build    # static build in dist/
 | `src/ai.js` | CPU opponent |
 | `src/input.js` | Keyboard and touch |
 | `src/hud.js` | Scoreboard, messages, start screen |
-| `src/audio.js` | Synthesised sounds |
+| `src/audio.js` | Match sound: ball strikes, bounces, net, slides, stadium reverb, crowd murmur and reactions |
+| `src/soundgen.js` | Builds the crowd voices, applause, cheers and reverb as sample buffers at startup |
 | `src/main.js` | Headless game core (`createGame`) and the browser loop |
 | `test/` | Scripted player, rules test, difficulty report |

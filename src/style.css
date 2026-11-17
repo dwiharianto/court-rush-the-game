@@ -150,8 +150,8 @@ body.in-menu #pause-btn, body.paused #pause-btn { display: none; }
 }
 #resume { border: 0; background: #d8f23a; color: #10140a; }
 #resume:hover { background: #e6ff55; }
-#quit { border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(14, 18, 25, 0.82); color: #dfe7f1; }
-#quit:hover { border-color: #fff; color: #fff; }
+#quit, #sound { border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(14, 18, 25, 0.82); color: #dfe7f1; }
+#quit:hover, #sound:hover { border-color: #fff; color: #fff; }
 #pause button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 body.touch #pause-hint { display: none; }
 body.paused #touch { display: none; }

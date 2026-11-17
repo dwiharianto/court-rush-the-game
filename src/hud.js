@@ -33,6 +33,9 @@ export function createHud(doc = document) {
   pauseButton.addEventListener('click', () => { if (pauseHandler) pauseHandler(); });
   resumeButton.addEventListener('click', () => { if (resumeHandler) resumeHandler(); });
   doc.getElementById('quit').addEventListener('click', () => { if (quitHandler) quitHandler(); });
+  const soundButton = doc.getElementById('sound');
+  let soundHandler = null;
+  soundButton.addEventListener('click', () => { if (soundHandler) soundHandler(); });
   let messageTimer = 0;
   let timingTimer = 0;
 
@@ -47,6 +50,8 @@ export function createHud(doc = document) {
     onPause(handler) { pauseHandler = handler; },
     onResume(handler) { resumeHandler = handler; },
     onQuit(handler) { quitHandler = handler; },
+    onSound(handler) { soundHandler = handler; },
+    setSound(on) { soundButton.textContent = on ? 'Sound: on' : 'Sound: off'; soundButton.setAttribute('aria-pressed', String(on)); },
     showPause(scoreLine) {
       doc.getElementById('pause-score').textContent = scoreLine;
       pauseEl.classList.remove('hidden');
