@@ -100,12 +100,12 @@ const scratch = createBall();
 // `horizon` seconds. Returns { t, x, y } or null. toward: +1 if the ball must be
 // travelling toward +z, -1 toward -z.
 export function predictAtPlane(b, zPlane, toward, horizon, out = {}) {
-  if ((b.z - zPlane) * toward >= 0) { out.t = 0; out.x = b.x; out.y = b.y; return out; }
+  if ((b.z - zPlane) * toward >= 0) { out.t = 0; out.x = b.x; out.y = b.y; out.bounces = b.bounces; return out; }
   const s = copyBall(scratch, b);
   const dt = BALL.fixedDt;
   for (let t = dt; t <= horizon; t += dt) {
     stepBall(s, dt, null);
-    if ((s.z - zPlane) * toward >= 0) { out.t = t; out.x = s.x; out.y = s.y; return out; }
+    if ((s.z - zPlane) * toward >= 0) { out.t = t; out.x = s.x; out.y = s.y; out.bounces = s.bounces; return out; }
   }
   return null;
 }

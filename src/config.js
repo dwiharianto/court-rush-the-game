@@ -133,7 +133,7 @@ export const ANIM = {
 
 export const BALL = {
   radius: 0.033,
-  visualRadius: 0.085, // drawn larger than life so it reads from the broadcast camera
+  visualRadius: 0.05, // drawn a little larger than life (1.5x) so it reads from the broadcast camera
   gravity: 9.8,
   bounce: 0.74, // vertical speed kept on a bounce
   sliceBounce: 0.6,
@@ -169,6 +169,20 @@ export const CONTACT = {
   reachY: 2.7,
 };
 
+// Volley: a ball taken out of the air by a player inside the volley zone.
+export const VOLLEY = {
+  zoneZ: 8.5, // within this distance of the net a ball that has not bounced is volleyed
+  speed: 17, // horizontal m/s
+  perfectSpeed: 21,
+  aimX: 3.3,
+  depthDefault: 8.2,
+  depthDeep: 10.2,
+  depthShort: 4.6,
+  dropSpeed: 13, // slice on a volley is a drop volley: soft and short
+  dropDepth: 3.0,
+  cpuSpeedFactor: 0.85,
+};
+
 // Overhead smash: a drive pressed when the ball will arrive high.
 export const SMASH = {
   minHeight: 1.9, // predicted ball height that turns a drive into a smash
@@ -200,10 +214,11 @@ export const AI = {
   //   pressureMiss extra miss chance at full stretch
   //   awayChance   how often it aims away from the player
   //   shotSpeed    drive speed, m/s; serveSpeed and serveError (timing spread, seconds)
+  //   netRush      chance of following a short-ball attack to the net
   levels: {
-    easy: { speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.4, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 17, serveSpeed: 23, serveError: 0.1 },
-    normal: { speed: 5.4, errorSize: 0.8, errorRate: 0.05, reaction: 0.28, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.09, awayChance: 0.75, shotSpeed: 20, serveSpeed: 27, serveError: 0.075 },
-    hard: { speed: 6.2, errorSize: 0.5, errorRate: 0.03, reaction: 0.2, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.06, awayChance: 0.88, shotSpeed: 23, serveSpeed: 31, serveError: 0.05 },
+    easy: { speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.4, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 17, serveSpeed: 23, serveError: 0.1, netRush: 0.15 },
+    normal: { speed: 5.4, errorSize: 0.8, errorRate: 0.05, reaction: 0.28, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.09, awayChance: 0.75, shotSpeed: 20, serveSpeed: 27, serveError: 0.075, netRush: 0.25 },
+    hard: { speed: 6.2, errorSize: 0.5, errorRate: 0.03, reaction: 0.2, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.06, awayChance: 0.88, shotSpeed: 23, serveSpeed: 31, serveError: 0.05, netRush: 0.35 },
   },
   stretchRun: 6, // metres of running that count as fully stretched
   stretchPaceMin: 19, // incoming ball speed where pace starts to add pressure, m/s
@@ -215,6 +230,13 @@ export const AI = {
   sideOffset: 0.75, // how far beside the ball the CPU sets up
   forehandBias: 0.4, // metres of extra travel the CPU accepts to hit a forehand
   aimX: 2.9,
+  approachZ: 8.0, // an incoming ball bouncing this close to the net is short: the CPU may attack it
+  deepRushFactor: 0.3, // net-rush chance off a deep ball, as a fraction of netRush
+  netZ: 3.6, // where the CPU stands at the net
+  volleyMinY: 0.35, // lowest ball the CPU volleys; lower ones it lets bounce
+  volleyMaxY: 1.85,
+  volleyNetGap: 1.6, // closest to the net the CPU will take a volley, metres
+  volleyTimeMargin: 0.12, // spare seconds it wants to be set for a volley
   depthMin: 7.8,
   depthMax: 10.3,
   longMiss: 1.6, // metres past the baseline on a forced long miss

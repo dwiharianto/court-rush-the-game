@@ -16,6 +16,8 @@
 //   lShY, rShY       horizontal sweep of a raised arm, positive is forward
 //   lElbow, rElbow   elbow flexion
 //   rWristX/Y/Z      racket orientation relative to the forearm
+//   lGrip            0..1, how far the left hand moves onto the racket handle
+//                    (two-handed backhand, volley preparation); solved by IK
 //   lift             extra hip height (jumps, idle bounce)
 //   hipY             explicit hip height, used when plant is false (seated)
 import * as THREE from 'three';
@@ -25,7 +27,7 @@ const POSE_KEYS = [
   'lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'hipsYaw',
   'torsoX', 'torsoY', 'torsoZ', 'headX', 'headY',
   'lShX', 'rShX', 'lShZ', 'rShZ', 'lShY', 'rShY', 'lElbow', 'rElbow',
-  'rWristX', 'rWristY', 'rWristZ', 'lift', 'hipY',
+  'rWristX', 'rWristY', 'rWristZ', 'lGrip', 'lift', 'hipY',
 ];
 
 export function makePose(values = {}) {
@@ -88,6 +90,16 @@ function lathe(profile, mat, scaleZ = 1, seg = 12, doubleSided = false) {
   m.castShadow = true;
   return m;
 }
+
+// where the left hand holds the handle in a two-handed grip, racket space
+const GRIP_POINT = new THREE.Vector3(0, -0.105, 0);
+const clampUnit = (v) => Math.max(-1, Math.min(1, v));
+const ik = {
+  s: new THREE.Vector3(), t: new THREE.Vector3(), d: new THREE.Vector3(), pole: new THREE.Vector3(),
+  u: new THREE.Vector3(), e: new THREE.Vector3(), f: new THREE.Vector3(),
+  x: new THREE.Vector3(), y: new THREE.Vector3(), z: new THREE.Vector3(),
+  m: new THREE.Matrix4(), q: new THREE.Quaternion(), qp: new THREE.Quaternion(),
+};
 
 function buildRacket(frameColor, gripColor) {
   const g = new THREE.Group();
@@ -311,6 +323,40 @@ export function createFigure(options = {}) {
     if (racket) racket.rotation.set(p.rWristX, p.rWristY, p.rWristZ);
   }
 
+  // Two-bone IK: put the left hand on the racket handle, blended by weight w.
+  // Call after the pose and the root transform are set.
+  const L1 = B.upperArm, L2 = B.foreArm + 0.035;
+  function applyGrip(w) {
+    if (!racket || w <= 0.001) return;
+    root.updateMatrixWorld(true);
+    armL.shoulder.getWorldPosition(ik.s);
+    ik.t.copy(GRIP_POINT).applyMatrix4(racket.matrixWorld);
+    ik.d.subVectors(ik.t, ik.s);
+    const len = ik.d.length() || 1;
+    ik.d.divideScalar(len);
+    const d = Math.min(Math.max(len, 0.08), (L1 + L2) * 0.999);
+    const inner = Math.acos(clampUnit((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2)));
+    const a = Math.acos(clampUnit((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d)));
+    // the elbow points down, out to the figure's left and a little back
+    ik.pole.set(0.55, -1, -0.25).transformDirection(root.matrixWorld);
+    ik.pole.addScaledVector(ik.d, -ik.pole.dot(ik.d)).normalize();
+    ik.u.copy(ik.d).multiplyScalar(Math.cos(a)).addScaledVector(ik.pole, Math.sin(a)); // upper arm
+    ik.e.copy(ik.s).addScaledVector(ik.u, L1);
+    ik.f.subVectors(ik.t, ik.e).normalize(); // forearm
+    ik.y.copy(ik.u).negate();
+    ik.z.copy(ik.f).addScaledVector(ik.u, -ik.f.dot(ik.u));
+    if (ik.z.lengthSq() < 1e-8) ik.z.copy(ik.pole).negate();
+    ik.z.normalize();
+    ik.x.crossVectors(ik.y, ik.z);
+    ik.m.makeBasis(ik.x, ik.y, ik.z);
+    ik.q.setFromRotationMatrix(ik.m);
+    armL.shoulder.parent.getWorldQuaternion(ik.qp).invert();
+    ik.q.premultiply(ik.qp);
+    armL.shoulder.quaternion.slerp(ik.q, w);
+    const bend = -(Math.PI - inner);
+    armL.elbow.rotation.x += (bend - armL.elbow.rotation.x) * w;
+  }
+
   setPose(POSES.stand);
 
   return {
@@ -319,6 +365,7 @@ export function createFigure(options = {}) {
     leftHand: armL.hand,
     pose: current,
     setPose,
+    applyGrip,
   };
 }
 
@@ -327,7 +374,8 @@ export function createFigure(options = {}) {
 //   object3d                the node to add to the scene
 //   setPose(name | null)    hold a named static pose (null returns to animation)
 //   update(dt, state)       state = { x, z, vx, vz, facing, action, actionT }
-//                           action: 'ready' | 'forehand' | 'backhand' | 'smash' | 'serveReady' | 'toss' | 'serve'
+//                           action: 'ready' | 'forehand' | 'backhand' | 'fhVolley' | 'bhVolley' | 'smash'
+//                                   | 'serveReady' | 'toss' | 'serve'
 //                           actionT: seconds since the action started
 // A rigged .glb with animation clips can implement the same three members
 // (map action names to clips, actionT to clip time) and drop in unchanged.
@@ -359,17 +407,43 @@ const FOREHAND = [
   key(S, {}),
 ];
 
+// two-handed: the left hand rides on the handle (lGrip), shoulders coil to the left
 const BACKHAND = [
   key(0, {}),
-  key(C * 0.55, { ...HIT_STANCE, torsoY: 1.0, torsoX: 0.25, headY: -0.6,
-    rShX: 0.2, rShZ: 0.95, rShY: 2.9, rElbow: 1.0, rWristX: -0.5, rWristZ: 0,
-    lShX: 0.5, lShZ: 0.3, lShY: 0.3, lElbow: 1.5 }),
-  key(C, { ...HIT_STANCE, torsoY: 0.4, torsoX: 0.25, headY: -0.2,
-    rShX: 0, rShZ: 1.05, rShY: 2.3, rElbow: 0.15, rWristX: -0.35, rWristZ: 0,
-    lShX: 0.1, lShZ: 0.5, lShY: -0.4, lElbow: 0.5 }),
-  key(C + 0.11, { ...HIT_STANCE, torsoY: -0.35, torsoX: 0.18, headY: 0.2,
-    rShX: 0.2, rShZ: 1.5, rShY: 0.9, rElbow: 0.1, rWristX: -0.1, rWristZ: 0,
-    lShX: -0.3, lShZ: 0.9, lShY: -0.9, lElbow: 0.3 }),
+  key(C * 0.55, { ...HIT_STANCE, hipsYaw: 0.7, torsoY: 1.2, torsoX: 0.25, headY: -1.25,
+    rShX: 0.3, rShZ: -0.1, rShY: 0.55, rElbow: 0.9, rWristX: -1.5, rWristZ: 0, lGrip: 1 }),
+  key(C, { ...HIT_STANCE, hipsYaw: 0.2, torsoY: 0.0, torsoX: 0.25, headY: -0.2,
+    rShX: 0.7, rShZ: -0.1, rShY: 0.95, rElbow: 0.2, rWristX: -1.35, rWristZ: 0, lGrip: 1 }),
+  key(C + 0.12, { ...HIT_STANCE, hipsYaw: -0.35, torsoY: -0.9, torsoX: 0.15, headY: 0.4,
+    rShX: 1.45, rShZ: 1.0, rShY: 0.1, rElbow: 2.2, rWristX: -0.9, rWristZ: 0, lGrip: 1 }),
+  key(S, {}),
+];
+
+// Volleys: short punch, no big backswing, racket head kept above the wrist.
+const VOLLEY_STANCE = { lHip: 0.55, rHip: 0.55, lKnee: 0.95, rKnee: 0.95, lHipZ: 0.3, rHipZ: 0.3, torsoX: 0.35 };
+const FH_VOLLEY = [
+  key(0, {}),
+  key(C * 0.6, { ...VOLLEY_STANCE, hipsYaw: -0.3, torsoY: -0.5, headY: 0.4,
+    rShX: 0.55, rShZ: 0.6, rShY: -0.3, rElbow: 1.4, rWristX: -1.7, rWristZ: 0.3,
+    lShX: 0.7, lShZ: 0.4, lElbow: 1.0 }),
+  key(C, { ...VOLLEY_STANCE, hipsYaw: -0.15, torsoY: -0.2, headY: 0.2,
+    rShX: 0.85, rShZ: 0.45, rShY: 0.1, rElbow: 0.9, rWristX: -1.5, rWristZ: 0.2,
+    lShX: 0.6, lShZ: 0.5, lElbow: 1.1 }),
+  key(C + 0.1, { ...VOLLEY_STANCE, hipsYaw: -0.1, torsoY: 0, headY: 0.1,
+    rShX: 1.0, rShZ: 0.35, rShY: 0.35, rElbow: 0.75, rWristX: -1.4, rWristZ: 0.1,
+    lShX: 0.5, lShZ: 0.5, lElbow: 1.1 }),
+  key(S, {}),
+];
+const BH_VOLLEY = [
+  key(0, {}),
+  key(C * 0.6, { ...VOLLEY_STANCE, hipsYaw: 0.4, torsoY: 0.6, headY: -0.5,
+    rShX: 0.6, rShZ: -0.2, rShY: 0.7, rElbow: 1.4, rWristX: -1.7, rWristZ: -0.3, lGrip: 0.85 }),
+  key(C, { ...VOLLEY_STANCE, hipsYaw: 0.25, torsoY: 0.3, headY: -0.3,
+    rShX: 0.75, rShZ: 0.1, rShY: 0.9, rElbow: 0.6, rWristX: -1.5, rWristZ: -0.3,
+    lShX: 0.3, lShZ: 1.0, lShY: 0.6, lElbow: 0.6 }),
+  key(C + 0.1, { ...VOLLEY_STANCE, hipsYaw: 0.2, torsoY: 0.2, headY: -0.2,
+    rShX: 0.7, rShZ: 0.3, rShY: 1.0, rElbow: 0.4, rWristX: -1.4, rWristZ: -0.2,
+    lShX: 0.2, lShZ: 1.2, lShY: 0.8, lElbow: 0.5 }),
   key(S, {}),
 ];
 
@@ -417,7 +491,8 @@ const SMASH = [
 ];
 
 const CLIPS = {
-  forehand: FOREHAND, backhand: BACKHAND, smash: SMASH, toss: TOSS, serve: SERVE,
+  forehand: FOREHAND, backhand: BACKHAND, fhVolley: FH_VOLLEY, bhVolley: BH_VOLLEY,
+  smash: SMASH, toss: TOSS, serve: SERVE,
   serveReady: [{ t: 0, pose: SERVE_STANCE }],
 };
 const NAMED = { ...POSES, ready: READY, trophy: TROPHY, serveStance: SERVE_STANCE };
@@ -505,6 +580,7 @@ export function createCharacter(options = {}) {
     rig.setPose(out);
     rig.object3d.position.set(s.x, 0, s.z);
     rig.object3d.rotation.y = s.facing + yaw;
+    rig.applyGrip(out.lGrip);
   }
 
   const headLocal = new THREE.Vector3();

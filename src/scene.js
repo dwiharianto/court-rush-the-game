@@ -479,7 +479,7 @@ function buildBall(scene) {
 
   // short-lived marks where the ball lands on the clay
   const marks = [];
-  const markGeo = new THREE.CircleGeometry(0.09, 12);
+  const markGeo = new THREE.CircleGeometry(BALL.visualRadius * 1.2, 12);
   for (let i = 0; i < 8; i++) {
     const m = new THREE.Mesh(markGeo, new THREE.MeshBasicMaterial({ color: 0x5a2416, transparent: true, opacity: 0, depthWrite: false }));
     m.rotation.x = -Math.PI / 2;
@@ -497,7 +497,7 @@ function buildBall(scene) {
       if (ball.visible) {
         mesh.position.set(ball.x, Math.max(BALL.visualRadius, ball.y), ball.z);
         const h = Math.max(0, ball.y);
-        const size = 0.3 + Math.min(h, 6) * 0.07;
+        const size = BALL.visualRadius * 3.6 + Math.min(h, 6) * 0.05;
         blob.scale.set(size, size, 1);
         blob.position.set(ball.x, 0.015, ball.z);
         blob.material.opacity = 0.75 - Math.min(0.45, h * 0.09);

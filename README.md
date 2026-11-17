@@ -16,7 +16,10 @@ npm run build    # static build in dist/
 
 - Move: arrows or WASD. The direction held at contact aims the shot.
 - Space: drive (an overhead smash on a high ball). K: slice. L: lob.
+- Forehand or backhand (two-handed) is picked from which side the ball arrives on.
+- At the net (inside about 8.5 m), a ball that has not bounced is volleyed. Space volleys, K plays a drop volley.
 - Serve: press once to toss, again near the top of the toss.
+- P or Esc pauses. The game also pauses when the tab loses focus.
 - Touch devices get a stick and HIT, SLICE, LOB buttons.
 
 ## Code

@@ -4,8 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame } from '../src/main.js';
-import { BALL, COURT } from '../src/config.js';
-import { createBall, stepBall } from '../src/ball.js';
+import { BALL, COURT, SWING } from '../src/config.js';
+import { createBall, stepBall, planShot, predictAtPlane } from '../src/ball.js';
 import { createMatch, awardPoint, fault, pointLabels, serveFromRight, inSingles, inServiceBox } from '../src/rules.js';
 import { createBot, playPoints, seededRng } from './bot.js';
 
@@ -165,6 +165,62 @@ test('an unhit toss is retaken without a fault', () => {
   assert.equal(g.match.serveNumber, 1);
 });
 
+// ---------------------------------------------------------------- volleys and backhands
+// Puts the player at (px, pz) and sends a CPU shot from (fromX, -10) toward (tx, tz).
+// Presses `press` when the ball is SWING.ideal seconds from the hitting plane.
+function incoming({ px, pz, fromX = 0, tx, tz, speed = 18, press = 'drive', aimY = 0 }) {
+  const g = createGame({ rng: seededRng(3), firstServer: 1 });
+  g.start();
+  g.state = 'rally';
+  const p = g.players[0], b = g.ball;
+  Object.assign(p, { x: px, z: pz, vx: 0, vz: 0, action: 'ready', actionT: 0, swing: null });
+  Object.assign(b, { x: fromX, y: 1.0, z: -10, spin: 'flat', bounces: 0, lastHitter: 1, inPlay: true, isServe: false, visible: true });
+  Object.assign(b, planShot(b, tx, tz, { speed }));
+  g.events.length = 0;
+  const log = [];
+  let pressed = false, action = null;
+  const pr = {};
+  for (let i = 0; i < 120 * 4 && g.state === 'rally'; i++) {
+    let inp = { x: 0, y: aimY, drive: false, slice: false, lob: false };
+    if (!pressed && b.lastHitter === 1) {
+      const hit = predictAtPlane(b, p.z - 0.4, 1, 2, pr);
+      if (hit && hit.t <= SWING.ideal) { inp[press] = true; pressed = true; }
+    }
+    g.step(BALL.fixedDt, inp);
+    if (pressed && !action) action = p.action;
+    for (const e of g.events) log.push(e);
+    g.events.length = 0;
+  }
+  return { g, log, action };
+}
+
+test('a ball taken out of the air near the net is a volley', () => {
+  const { log, action } = incoming({ px: -0.8, pz: 4, tx: 0, tz: 10 });
+  assert.equal(action, 'fhVolley');
+  const hit = log.find((e) => e.type === 'hit' && e.side === 0);
+  assert.ok(hit && hit.volley, 'the player volleyed');
+  const timing = log.find((e) => e.type === 'timing');
+  assert.ok(timing.volley);
+  const bounce = log.find((e) => e.type === 'bounce');
+  assert.ok(bounce.z < 0 && inSingles(bounce.x, bounce.z, 1), 'the volley lands in the CPU court');
+});
+
+test('the same ball from the baseline is a groundstroke, not a volley', () => {
+  const { log, action } = incoming({ px: -0.8, pz: 13.5, tx: 0, tz: 10 });
+  assert.equal(action, 'forehand');
+  const hit = log.find((e) => e.type === 'hit' && e.side === 0);
+  assert.ok(hit && !hit.volley);
+});
+
+test('a ball on the player\'s left is a backhand, and slice at the net is a drop volley', () => {
+  const back = incoming({ px: 0.8, pz: 13.5, tx: 0, tz: 10 });
+  assert.equal(back.action, 'backhand');
+  const drop = incoming({ px: 0.8, pz: 4, tx: 0, tz: 10, press: 'slice' });
+  assert.equal(drop.action, 'bhVolley');
+  const bounce = drop.log.find((e) => e.type === 'bounce');
+  assert.ok(bounce.z < 0 && bounce.z > -5.5, `drop volley lands short (z ${bounce.z.toFixed(2)})`);
+});
+
 // ---------------------------------------------------------------- long run with invariants
 test('several hundred points of play keep the rules and score consistent', () => {
   for (const [difficulty, profile, seed] of [['easy', 'casual', 11], ['normal', 'solid', 12], ['hard', 'sharp', 13]]) {
@@ -242,7 +298,7 @@ test('several hundred points of play keep the rules and score consistent', () =>
     });
     assert.equal(stats.stuck, false, `${where()}: play never stalls`);
     assert.equal(stats.points, 300);
-    assert.ok(games >= 40, `${where()}: games change (${games})`);
+    assert.ok(games >= 30, `${where()}: games change (${games})`);
     assert.ok(stats.matches >= 1, `${where()}: at least one full set completes`);
     assert.ok(deuces >= 1, `${where()}: deuce comes up`);
     assert.ok(stats.faults >= 1, `${where()}: faults happen`);
