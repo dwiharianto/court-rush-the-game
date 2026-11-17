@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Court Rush</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="hud">
+      <div id="scoreboard">
+        <div class="sb-title"><span id="sb-tour"></span></div>
+        <div class="sb-row" data-side="0">
+          <span class="sb-dot"></span><span class="sb-name"></span><span class="sb-games">0</span><span class="sb-points">0</span>
+        </div>
+        <div class="sb-row" data-side="1">
+          <span class="sb-dot"></span><span class="sb-name"></span><span class="sb-games">0</span><span class="sb-points">0</span>
+        </div>
+      </div>
+      <div id="message"><div id="message-main"></div><div id="message-sub"></div></div>
+      <div id="timing"></div>
+      <div id="touch">
+        <div id="stick"><div id="stick-knob"></div></div>
+        <div id="buttons">
+          <button data-action="lob" class="tb tb-lob">LOB</button>
+          <button data-action="slice" class="tb tb-slice">SLICE</button>
+          <button data-action="drive" class="tb tb-hit">HIT</button>
+        </div>
+      </div>
+    </div>
+    <div id="menu">
+      <div class="menu-card">
+        <div class="menu-tour" id="menu-tour"></div>
+        <h1>COURT RUSH</h1>
+        <div id="menu-result"><div id="menu-headline"></div><div id="menu-detail"></div></div>
+        <div class="menu-controls" id="controls-keys">
+          <div><b>Arrows or WASD</b><span>Move, and aim at contact</span></div>
+          <div><b>Space</b><span>Drive (smash on a high ball)</span></div>
+          <div><b>K</b><span>Slice</span></div>
+          <div><b>L</b><span>Lob</span></div>
+          <div><b>Serve</b><span>Press once to toss, again at the top</span></div>
+        </div>
+        <div class="menu-controls" id="controls-touch">
+          <div><b>Stick</b><span>Move, and aim at contact</span></div>
+          <div><b>HIT</b><span>Drive (smash on a high ball)</span></div>
+          <div><b>SLICE / LOB</b><span>Low skidding ball, or a high one</span></div>
+          <div><b>Serve</b><span>Tap once to toss, again at the top</span></div>
+        </div>
+        <div class="menu-levels" id="menu-levels">
+          <button data-level="easy">Easy</button>
+          <button data-level="normal" class="on">Normal</button>
+          <button data-level="hard">Hard</button>
+        </div>
+        <button id="play">Play</button>
+        <div class="menu-foot">First to 6 games, win by 2</div>
+      </div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
