@@ -1,6 +1,6 @@
 // Court, net, arena dressing, lighting, and the broadcast camera.
 import * as THREE from 'three';
-import { COURT, ARENA, CAMERA, RENDER, LIGHT, COLORS, NAMES, BALL, netHeightAt } from './config.js';
+import { COURT, ARENA, CAMERA, RENDER, LIGHT, COLORS, NAMES, BALL, SURFACES, DEFAULT_SURFACE, netHeightAt } from './config.js';
 import { createFigure, POSES } from './human.js';
 
 function canvasTexture(w, h, draw) {
@@ -80,6 +80,62 @@ function box(w, h, d, material, x, y, z, { cast = true, receive = true } = {}) {
   return m;
 }
 
+// ---------------------------------------------------------------- surfaces
+// Grass: mown stripes across the court, with worn, browner patches where players
+// stand most: behind the baselines and around the centre marks.
+function grassCourtTexture(color) {
+  const rnd = makeRng(41);
+  const t = canvasTexture(512, 1024, (g, w, h) => {
+    g.fillStyle = color;
+    g.fillRect(0, 0, w, h);
+    const bands = 24;
+    for (let i = 0; i < bands; i++) {
+      g.fillStyle = i % 2 ? 'rgba(255,255,230,0.07)' : 'rgba(0,30,0,0.07)';
+      g.fillRect(0, (i * h) / bands, w, h / bands);
+    }
+    // wear: baselines (top and bottom edges of the texture) and the service T
+    for (const [cy, rx, ry, a] of [[0.02, 0.32, 0.05, 0.55], [0.98, 0.32, 0.05, 0.55], [0.5, 0.12, 0.09, 0.15]]) {
+      for (let k = 0; k < 40; k++) {
+        const x = w * (0.5 + (rnd() - 0.5) * rx * 1.6), y = h * (cy + (rnd() - 0.5) * ry * 1.4);
+        const r = 14 + rnd() * 40;
+        const grad = g.createRadialGradient(x, y, 0, x, y, r);
+        grad.addColorStop(0, `rgba(150,120,70,${(a * (0.25 + rnd() * 0.3)).toFixed(3)})`);
+        grad.addColorStop(1, 'rgba(150,120,70,0)');
+        g.fillStyle = grad;
+        g.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+    }
+    for (let i = 0; i < 16000; i++) {
+      g.fillStyle = rnd() < 0.5 ? `rgba(220,255,180,${0.04 + rnd() * 0.08})` : `rgba(0,40,0,${0.05 + rnd() * 0.1})`;
+      g.fillRect(rnd() * w, rnd() * h, 1 + rnd(), 1 + rnd() * 2);
+    }
+  });
+  return t;
+}
+
+function grassFloorTexture(color) {
+  const rnd = makeRng(43);
+  const t = canvasTexture(512, 512, (g, w, h) => {
+    g.fillStyle = color;
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 4; i++) {
+      g.fillStyle = i % 2 ? 'rgba(255,255,230,0.05)' : 'rgba(0,30,0,0.06)';
+      g.fillRect(0, (i * h) / 4, w, h / 4);
+    }
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = rnd() < 0.5 ? `rgba(220,255,180,${0.03 + rnd() * 0.07})` : `rgba(0,40,0,${0.04 + rnd() * 0.08})`;
+      g.fillRect(rnd() * w, rnd() * h, 1 + rnd(), 1 + rnd() * 2);
+    }
+  });
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+// Acrylic hard court: a flat colour with fine sand grain.
+function hardTexture(color, seed) {
+  return noiseTexture(color, seed, { speckles: 14000, blotches: 12, light: '255,255,255', dark: '0,10,30' });
+}
+
 // ---------------------------------------------------------------- court
 function buildCourt(scene) {
   const floorTex = noiseTexture(COLORS.floor, 7, { speckles: 5000, blotches: 20, light: '200,205,215', dark: '0,0,0' });
@@ -105,6 +161,24 @@ function buildCourt(scene) {
   clay.receiveShadow = true;
   scene.add(clay);
 
+  // textures for each surface, built the first time it is chosen
+  const looks = {
+    clay: () => ({ court: clayTex, floor: floorTex, courtRough: 1 }),
+    grass: () => {
+      const f = grassFloorTexture(SURFACES.grass.floor);
+      f.repeat.set(6, 8);
+      return { court: grassCourtTexture(SURFACES.grass.court), floor: f, courtRough: 0.95 };
+    },
+    hard: () => {
+      const c = hardTexture(SURFACES.hard.court, 61);
+      c.repeat.set(3, 6);
+      const f = hardTexture(SURFACES.hard.floor, 62);
+      f.repeat.set(10, 14);
+      return { court: c, floor: f, courtRough: 0.8 };
+    },
+  };
+  const built = {};
+
   const lineMat = new THREE.MeshStandardMaterial({
     color: COLORS.line, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
   });
@@ -126,6 +200,18 @@ function buildCourt(scene) {
     addLine(0, s * (HL - bw - 0.05), lw, 0.1); // centre mark
   }
   addLine(0, 0, lw, COURT.serviceLine * 2); // centre service line
+
+  return {
+    setSurface(name) {
+      if (!looks[name]) return;
+      const t = built[name] || (built[name] = looks[name]());
+      clay.material.map = t.court;
+      clay.material.roughness = t.courtRough;
+      clay.material.needsUpdate = true;
+      floor.material.map = t.floor;
+      floor.material.needsUpdate = true;
+    },
+  };
 }
 
 function buildNet(scene) {
@@ -655,12 +741,13 @@ export function createWorld() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COLORS.background);
 
-  buildCourt(scene);
+  const court = buildCourt(scene);
   buildNet(scene);
   const boards = buildArena(scene);
   buildDressing(scene);
   const ballView = buildBall(scene);
   const slideFx = buildSlideFx(scene);
+  let marks = SURFACES[DEFAULT_SURFACE].marks;
   buildLights(scene);
 
   const camera = new THREE.PerspectiveCamera(CAMERA.fov, CAMERA.baseAspect, CAMERA.near, CAMERA.far);
@@ -692,7 +779,14 @@ export function createWorld() {
   return {
     scene, camera, resize, updateCamera,
     setSpeed: boards.setSpeed, setClock: boards.setClock,
-    updateBall: ballView.update, addBounceMark: ballView.addMark,
-    addSlideTrail: slideFx.addTrail, slideDust: slideFx.puff, updateFx: slideFx.update,
+    updateBall: ballView.update, addBounceMark: (x, z) => { if (marks) ballView.addMark(x, z); },
+    addSlideTrail: (...a) => { if (marks) slideFx.addTrail(...a); },
+    slideDust: (...a) => { if (marks) slideFx.puff(...a); },
+    updateFx: slideFx.update,
+    // switch the court between clay, grass and hard; marks and dust only show on clay
+    setSurface(name) {
+      court.setSurface(name);
+      marks = !!(SURFACES[name] && SURFACES[name].marks);
+    },
   };
 }

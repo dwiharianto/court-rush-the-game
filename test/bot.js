@@ -119,14 +119,14 @@ export function createBot(profile, rng) {
 }
 
 // Play points until `points` are done or a match limit is hit. Returns stats.
-export function playPoints(createGame, { difficulty, profile, seed = 1, points = 300, onEvent = null, onStep = null }) {
+export function playPoints(createGame, { difficulty, profile, seed = 1, points = 300, surface, onEvent = null, onStep = null }) {
   const rng = seededRng(seed);
   const stats = {
     points: 0, human: 0, cpu: 0, rallyHits: 0, matches: 0, humanMatches: 0,
     reasons: {}, faults: 0, timing: { perfect: 0, early: 0, late: 0 }, simSeconds: 0, stuck: false,
   };
   while (stats.points < points && !stats.stuck) {
-    const g = createGame({ difficulty, rng });
+    const g = createGame({ difficulty, rng, surface });
     const bot = createBot(profile, rng);
     g.start();
     let steps = 0, lastActivity = 0;

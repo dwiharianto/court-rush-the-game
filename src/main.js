@@ -1,6 +1,6 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
-import { AI, AUDIO, BALL, CONTACT, COURT, NAMES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
+import { AI, AUDIO, BALL, CONTACT, COURT, DEFAULT_SURFACE, NAMES, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
 import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox } from './rules.js';
 import { createAI } from './ai.js';
@@ -29,7 +29,10 @@ export function createGame(options = {}) {
   const level = { ...AI.levels[levelName] };
   const ai = createAI(level, rng);
   const players = [makePlayer(0, PLAYER.speed), makePlayer(1, level.speed)];
+  const surfaceName = SURFACES[options.surface] ? options.surface : DEFAULT_SURFACE;
+  const court = SURFACES[surfaceName];
   const ball = createBall();
+  ball.court = court;
   const events = []; // drained by the view or the test
   const ballEvents = [];
   const plane = {};
@@ -57,7 +60,7 @@ export function createGame(options = {}) {
   function drive(p, wx, wz, top, dt) {
     const speed = Math.hypot(p.vx, p.vz);
     p.chaseT = speed >= p.speed * PLAYER.chaseSpeed ? p.chaseT + dt : 0;
-    if (!p.slide && p.chaseT >= PLAYER.slideSprintTime) {
+    if (!p.slide && p.chaseT >= court.slideSprint) {
       // braking hard out of a long sprint slides; a hard reversal plants and pushes off instead
       const along = (wx * top * p.vx + wz * top * p.vz) / speed;
       if (along < speed * PLAYER.slideTrigger && along > -speed * PLAYER.slideReverseLimit) startSlide(p);
@@ -66,7 +69,7 @@ export function createGame(options = {}) {
       p.slideT += dt;
       // pushing back the other way digs in harder than just braking
       const reverse = wx * p.vx + wz * p.vz < 0;
-      const ns = Math.max(0, speed - (reverse ? PLAYER.slideDecelReverse : PLAYER.slideDecel) * dt);
+      const ns = Math.max(0, speed - (reverse ? PLAYER.slideDecelReverse : court.slideDecel) * dt);
       const f = speed > 0 ? ns / speed : 0;
       p.vx *= f; p.vz *= f;
       if (ns <= PLAYER.slideEndSpeed) endSlide(p);
@@ -74,6 +77,13 @@ export function createGame(options = {}) {
       const k = Math.min(1, dt * PLAYER.accel);
       p.vx += (wx * top - p.vx) * k;
       p.vz += (wz * top - p.vz) * k;
+      // planting to push off back the other way at speed: the shoe grips (and squeaks, on a hard court)
+      p.plantCool = Math.max(0, (p.plantCool || 0) - dt);
+      const reversing = wx * p.vx + wz * p.vz < -0.5 * speed * Math.hypot(wx, wz);
+      if (speed > PLAYER.plantSpeed && reversing && p.plantCool === 0) {
+        p.plantCool = PLAYER.plantGap;
+        events.push({ type: 'plant', side: p.side, x: p.x, z: p.z, speed });
+      }
     }
     p.x += p.vx * dt;
     p.z += p.vz * dt;
@@ -262,7 +272,7 @@ export function createGame(options = {}) {
     p.swing = { kind: smash ? 'smash' : kind, hand, plan, volley, done: false };
     considerSplit(players[1 - p.side]);
     // swinging at the end of a long chase slides into the shot
-    if (!p.slide && !smash && p.chaseT >= PLAYER.slideChaseTime) startSlide(p);
+    if (!p.slide && !smash && p.chaseT >= court.slideChase) startSlide(p);
   }
 
   // risky: this shot flies low enough to clip the tape, or find the net
@@ -504,6 +514,7 @@ export function createGame(options = {}) {
     }
   }
 
+  g.surface = surfaceName;
   return g;
 }
 
@@ -541,9 +552,21 @@ async function boot() {
   };
   showScore();
 
-  hud.onPlay((difficulty) => {
+  // court surface: previewed in the menu, remembered on this device
+  function applySurface(name) {
+    world.setSurface(name);
+    audio.setSurface(name);
+    try { localStorage.setItem('courtRush.surface', name); } catch { /* storage blocked */ }
+  }
+  hud.onSurface(applySurface);
+  let savedSurface = null;
+  try { savedSurface = localStorage.getItem('courtRush.surface'); } catch { /* storage blocked */ }
+  hud.setSurface(SURFACES[savedSurface] ? savedSurface : DEFAULT_SURFACE);
+
+  hud.onPlay((difficulty, surface) => {
     audio.unlock();
-    game = createGame({ difficulty });
+    applySurface(surface);
+    game = createGame({ difficulty, surface });
     game.start();
     matchTime = 0;
     clockRunning = true;
@@ -654,6 +677,9 @@ async function boot() {
           break;
         case 'split':
           views[e.side].splitStep();
+          break;
+        case 'plant':
+          audio.play('plant', { speed: e.speed, x: e.x, z: e.z });
           break;
         case 'slide':
           audio.play('slide', { speed: e.speed, x: e.x, z: e.z });

@@ -77,6 +77,31 @@ export const COLORS = {
   post: 0x15171a,
 };
 
+// Court surfaces. Clay is slow with a high bounce and long slides; grass is fast
+// and low, the ball skidding through; hard courts sit in between and players
+// stop with a squeak rather than a slide.
+export const SURFACES = {
+  clay: {
+    label: 'Clay', court: '#b9573a', floor: '#2a2d32',
+    bounce: 0.74, sliceBounce: 0.6, friction: 0.8, // vertical and horizontal speed kept on a bounce
+    slideDecel: 12, slideChase: 0.45, slideSprint: 1.0, // m/s^2, and seconds of chasing before a slide
+    marks: true, // bounce marks, slide trails and dust
+  },
+  grass: {
+    label: 'Grass', court: '#5f8f3a', floor: '#557f34',
+    bounce: 0.64, sliceBounce: 0.5, friction: 0.9,
+    slideDecel: 17, slideChase: 0.6, slideSprint: 1.3,
+    marks: false,
+  },
+  hard: {
+    label: 'Hard court', court: '#2f5d93', floor: '#36624e',
+    bounce: 0.7, sliceBounce: 0.56, friction: 0.85,
+    slideDecel: 22, slideChase: 0.6, slideSprint: 1.3, // short skids only
+    marks: false,
+  },
+};
+export const DEFAULT_SURFACE = 'clay';
+
 // Body proportions for the code-built figure (about 1.85 m tall).
 export const BODY = {
   thigh: 0.45,
@@ -104,13 +129,13 @@ export const PLAYER = {
   // Sliding happens only at the end of a real chase: running near top speed for a while,
   // then swinging at the ball, or braking hard out of a long sprint. Normal stops are quick.
   chaseSpeed: 0.8, // fraction of top speed that counts as chasing
-  slideChaseTime: 0.45, // seconds of chasing before a swing slides into the shot
-  slideSprintTime: 1.0, // seconds of chasing before braking turns into a slide
   slideTrigger: 0.3, // braking: wanted speed along the run below this fraction of speed
   slideReverseLimit: 0.3, // wanting to go back the other way: plant and push off, no slide
-  slideDecel: 12, // m/s^2 while sliding
+  // the slide's deceleration and the chase times come from the court: see SURFACES
   slideDecelReverse: 24, // m/s^2 when pushing back the other way mid-slide
   slideEndSpeed: 0.8,
+  plantSpeed: 4.2, // reversing direction from above this speed plants the foot (a squeak on hard courts)
+  plantGap: 1.5, // seconds between plants for one player
   splitMaxSpeed: 2.2, // a player moving faster than this is still getting into position: no split step
   splitSkip: 0.12, // chance a set player skips the split step anyway
 };
@@ -120,6 +145,7 @@ export const AUDIO = {
   reverb: 0.22, // send into the stadium reverb
   crowd: 1, // crowd bus
   gruntPitch: [112, 128], // each player's voice, Hz
+  surfaceBounce: { clay: 1, grass: 0.75, hard: 1.2 }, // bounce loudness by court
   // how often a player grunts, by shot: big efforts more often, touch shots rarely
   gruntChance: { serve: 0.5, smash: 0.75, power: 0.35, hit: 0.1, slice: 0.05, volley: 0.04, lob: 0.03 },
   levels: {
@@ -127,6 +153,7 @@ export const AUDIO = {
     chatter: 0.22, hush: 0.05, // stadium bed between points and during play
     applause: 0.82, whistle: 0.2,
     grunt: 0.5, call: 1.6, // line-call volume relative to the master volume
+    squeak: 0.5,
   },
 };
 
@@ -165,9 +192,7 @@ export const BALL = {
   radius: 0.033,
   visualRadius: 0.05, // drawn a little larger than life (1.5x) so it reads from the broadcast camera
   gravity: 9.8,
-  bounce: 0.74, // vertical speed kept on a bounce
-  sliceBounce: 0.6,
-  friction: 0.8, // horizontal speed kept on a bounce
+  // bounce and friction depend on the court: see SURFACES
   fixedDt: 1 / 120, // game step
   maxSubstep: 1 / 240, // ball integration step
   restSpeed: 0.6, // below this vertical speed the ball rolls instead of bouncing

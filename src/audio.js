@@ -17,6 +17,7 @@ export function createAudio(options = {}) {
   let murmurGain = null;
   let crowdMode = 'chatter', swellIn = 0;
   let muted = false, paused = false;
+  let surface = 'clay'; // the court changes how bounces, slides and stops sound
   const rnd = options.rng || Math.random;
 
   // ------------------------------------------------------------ setup
@@ -60,7 +61,7 @@ export function createAudio(options = {}) {
     gritBuf = buffer(grit(sr, 1.5, makeRng(11)), sr);
     // several variations of each ball sound, so repeated hits never sound identical
     const br = makeRng(21);
-    for (const kind of ['hit', 'volley', 'slice', 'serve', 'smash', 'bounce']) {
+    for (const kind of ['hit', 'volley', 'slice', 'serve', 'smash', 'bounce', 'bounceGrass', 'bounceHard']) {
       bank.ball[kind] = [];
       for (let i = 0; i < 6; i++) bank.ball[kind].push(buffer(ballSound(sr, kind, br), sr));
     }
@@ -168,10 +169,12 @@ export function createAudio(options = {}) {
     ballHit(kind, AUDIO.levels.strike * weight * (0.3 + 0.7 * p), opts);
   }
 
-  // Ball on clay: a soft, gritty thud, louder for faster impacts.
+  // Ball on the court: a gritty thud on clay, a soft thud on grass, a crisp pock on
+  // a hard court; louder for faster impacts.
   function bounce(opts) {
     const p = Math.max(0.12, Math.min(1, (opts.speed ?? 6) / 9));
-    ballHit('bounce', AUDIO.levels.bounce * p, opts);
+    const kind = surface === 'grass' ? 'bounceGrass' : surface === 'hard' ? 'bounceHard' : 'bounce';
+    ballHit(kind, AUDIO.levels.bounce * AUDIO.surfaceBounce[surface] * p, opts);
   }
 
   // A player's effort grunt on a big shot.
@@ -235,24 +238,73 @@ export function createAudio(options = {}) {
     for (let i = 0; i < 3; i++) burst(at + 0.015 + i * 0.022, { f: 1900 + rnd() * 500, q: 3, amp: 0.15 * k * (1 - i * 0.25), tau: 0.008, dest });
   }
 
-  // Shoe sliding over clay: a gritty scrape that fades in and out.
+  // A shoe squeaking on a hard court: rubber stick-slip, a buzzy tone that bends.
+  function squeak(opts, level = 1) {
+    const at = now() + 0.005;
+    const dest = place(opts);
+    const chirps = rnd() < 0.35 ? 2 : 1;
+    let t = at;
+    for (let c = 0; c < chirps; c++) {
+      const f = 1050 + rnd() * 700, dur = 0.07 + rnd() * 0.14;
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f * 0.92, t);
+      o.frequency.linearRampToValueAtTime(f * (1.05 + rnd() * 0.1), t + dur * 0.4);
+      o.frequency.linearRampToValueAtTime(f * (0.85 + rnd() * 0.1), t + dur);
+      const wob = ctx.createOscillator(); // the stutter of rubber gripping and slipping
+      wob.frequency.value = 28 + rnd() * 20;
+      const wobGain = ctx.createGain();
+      wobGain.gain.value = f * 0.04;
+      wob.connect(wobGain).connect(o.frequency);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = f * 2; bp.Q.value = 2.5;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = 700;
+      const g = ctx.createGain();
+      const peak = AUDIO.levels.squeak * level * (0.7 + 0.3 * rnd());
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(peak, t + 0.012);
+      g.gain.setValueAtTime(peak * 0.8, t + dur * 0.7);
+      g.gain.linearRampToValueAtTime(0, t + dur);
+      o.connect(bp).connect(hp).connect(g).connect(dest);
+      o.start(t); wob.start(t);
+      o.stop(t + dur + 0.02); wob.stop(t + dur + 0.02);
+      t += dur + 0.03 + rnd() * 0.05;
+    }
+  }
+
+  // A hard stop or change of direction: a squeak on hard courts, a small scuff on clay,
+  // nothing on grass.
+  function plant(opts) {
+    if (surface === 'hard') { if (rnd() < 0.8) squeak(opts, 0.8); }
+    else if (surface === 'clay') scrape(opts, 0.12, 0.35);
+  }
+
+  // A slide: a long gritty scrape on clay, a soft brush on grass, a squeal and skid on a hard court.
   function slide(opts) {
+    if (surface === 'hard') { squeak(opts, 1.1); scrape(opts, 0.2, 0.5, 2600); return; }
+    if (surface === 'grass') { scrape(opts, 0.3, 0.45, 900); return; }
+    scrape(opts);
+  }
+
+  // Shoe sliding over the court surface: a gritty scrape that fades in and out.
+  function scrape(opts, durScale = 1, level = 1, centre = 1600) {
     const at = now() + 0.005;
     const dest = place(opts);
     const p = Math.max(0.4, Math.min(1, (opts.speed ?? 5) / 6));
-    const dur = 0.3 + 0.3 * p;
+    const dur = (0.3 + 0.3 * p) * durScale + 0.05;
     const s = ctx.createBufferSource();
     s.buffer = gritBuf;
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass'; bp.Q.value = 0.7;
-    bp.frequency.setValueAtTime(1600, at);
-    bp.frequency.exponentialRampToValueAtTime(700, at + dur);
+    bp.frequency.setValueAtTime(centre, at);
+    bp.frequency.exponentialRampToValueAtTime(centre * 0.45, at + dur);
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass'; hp.frequency.value = 220;
     const g = ctx.createGain();
-    const peak = AUDIO.levels.slide * p;
+    const peak = AUDIO.levels.slide * p * level;
     g.gain.setValueAtTime(0, at);
-    g.gain.linearRampToValueAtTime(peak, at + 0.07);
+    g.gain.linearRampToValueAtTime(peak, at + Math.min(0.07, dur * 0.3));
     g.gain.setValueAtTime(peak, at + dur * 0.55);
     g.gain.linearRampToValueAtTime(0, at + dur);
     s.connect(bp).connect(hp).connect(g).connect(dest);
@@ -311,7 +363,7 @@ export function createAudio(options = {}) {
     },
   };
 
-  const SFX = { strike, bounce, net, cord, slide, effort };
+  const SFX = { strike, bounce, net, cord, slide, plant, effort };
 
   return {
     // Browsers only allow audio after a user gesture, so this runs on Play.
@@ -324,7 +376,7 @@ export function createAudio(options = {}) {
       }
       if (ctx.state === 'suspended' && !paused && !options.context) ctx.resume();
     },
-    // name: strike | bounce | net | cord | slide | effort; opts: { kind, power, speed, side, x, z }
+    // name: strike | bounce | net | cord | slide | plant | effort; opts: { kind, power, speed, side, x, z }
     play(name, opts = {}) {
       if (!ctx || (ctx.state !== 'running' && !options.context) || !SFX[name]) return;
       if (name === 'strike') strike(opts.kind, opts);
@@ -332,6 +384,7 @@ export function createAudio(options = {}) {
     },
     // a spoken line call: 'Out!', 'Fault!', 'Let!'
     call,
+    setSurface(name) { surface = name; },
     react(kind, intensity = 0.5) {
       if (!ctx || !REACT[kind]) return;
       REACT[kind](Math.max(0, Math.min(1, intensity)));

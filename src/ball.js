@@ -1,5 +1,5 @@
 // Ball state, fixed-step physics, and shot planning. No rendering here.
-import { BALL, COURT, SHOT, netHeightAt } from './config.js';
+import { BALL, COURT, SHOT, SURFACES, DEFAULT_SURFACE, netHeightAt } from './config.js';
 
 // A repeatable number in [0, 1) from two values, for outcomes that predictions must reproduce.
 function hash01(a, b) {
@@ -17,6 +17,7 @@ export function createBall() {
     bounces: 0, // since the last hit
     lastHitter: -1, // side index of the last player to hit it
     hitId: 0, // increments on every hit
+    court: SURFACES[DEFAULT_SURFACE], // bounce physics of the surface it is played on
     inPlay: false, // the rules are watching this ball
     isServe: false, // a serve that has not been returned yet
     visible: false,
@@ -27,7 +28,7 @@ export function copyBall(out, b) {
   out.x = b.x; out.y = b.y; out.z = b.z;
   out.vx = b.vx; out.vy = b.vy; out.vz = b.vz;
   out.spin = b.spin; out.bounces = b.bounces;
-  out.lastHitter = b.lastHitter; out.hitId = b.hitId;
+  out.lastHitter = b.lastHitter; out.hitId = b.hitId; out.court = b.court;
   out.inPlay = b.inPlay; out.visible = b.visible;
   return out;
 }
@@ -89,9 +90,10 @@ export function stepBall(b, dt, events) {
         b.vz *= k;
       } else {
         const impact = -b.vy;
-        b.vy = -b.vy * (b.spin === 'slice' ? BALL.sliceBounce : BALL.bounce);
-        b.vx *= BALL.friction;
-        b.vz *= BALL.friction;
+        const court = b.court || SURFACES[DEFAULT_SURFACE];
+        b.vy = -b.vy * (b.spin === 'slice' ? court.sliceBounce : court.bounce);
+        b.vx *= court.friction;
+        b.vz *= court.friction;
         b.bounces++;
         if (events) events.push({ type: 'bounce', x: b.x, z: b.z, n: b.bounces, v: impact });
       }

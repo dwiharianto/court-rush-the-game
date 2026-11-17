@@ -85,6 +85,7 @@ html, body {
 body.touch #controls-touch { display: block; }
 body.touch #controls-keys { display: none; }
 .menu-levels { display: flex; gap: 8px; margin: 12px 0; }
+.menu-surfaces { margin-bottom: 0; }
 .menu-levels button {
   flex: 1; padding: 9px 0; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.25);
   background: rgba(14, 18, 25, 0.82); color: #dfe7f1; font: inherit; font-weight: 700; font-size: 13px;

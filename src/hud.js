@@ -25,7 +25,17 @@ export function createHud(doc = document) {
       for (const o of levelButtons) o.classList.toggle('on', o === b);
     });
   }
-  playButton.addEventListener('click', () => { if (playHandler) playHandler(level); });
+  // court surface: picking one previews it behind the menu
+  const surfaceButtons = [...doc.querySelectorAll('#menu-surfaces button')];
+  let surface = 'clay';
+  let surfaceHandler = null;
+  const pickSurface = (name) => {
+    surface = name;
+    for (const o of surfaceButtons) o.classList.toggle('on', o.dataset.surface === name);
+    if (surfaceHandler) surfaceHandler(name);
+  };
+  for (const b of surfaceButtons) b.addEventListener('click', () => pickSurface(b.dataset.surface));
+  playButton.addEventListener('click', () => { if (playHandler) playHandler(level, surface); });
   const pauseEl = doc.getElementById('pause');
   const pauseButton = doc.getElementById('pause-btn');
   const resumeButton = doc.getElementById('resume');
@@ -47,6 +57,8 @@ export function createHud(doc = document) {
 
   return {
     onPlay(handler) { playHandler = handler; },
+    onSurface(handler) { surfaceHandler = handler; },
+    setSurface(name) { if (surfaceButtons.some((b) => b.dataset.surface === name)) pickSurface(name); },
     onPause(handler) { pauseHandler = handler; },
     onResume(handler) { resumeHandler = handler; },
     onQuit(handler) { quitHandler = handler; },

@@ -12,6 +12,10 @@ npm run tune     # difficulty report: scripted players against each CPU level
 npm run build    # static build in dist/
 ```
 
+## Courts
+
+Pick Clay, Grass or Hard court on the start screen. Clay is slow with a high bounce and long slides; grass is fast and low, with shorter slides; hard courts sit in between, with short skids and squeaking shoes. Bounces, slides and stops sound different on each.
+
 ## Controls
 
 - Move: arrows or WASD. The direction held at contact aims the shot.

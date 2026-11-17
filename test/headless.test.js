@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame } from '../src/main.js';
-import { BALL, COURT, SWING, netHeightAt } from '../src/config.js';
+import { BALL, COURT, SWING, SURFACES, netHeightAt } from '../src/config.js';
 import { createBall, stepBall, planShot, predictAtPlane, copyBall, lowerOverNet } from '../src/ball.js';
 import { createMatch, awardPoint, fault, pointLabels, serveFromRight, inSingles, inServiceBox } from '../src/rules.js';
 import { createBot, playPoints, seededRng } from './bot.js';
@@ -323,6 +323,43 @@ test('a serve that clips the net and lands in the box is a let, replayed with no
   assert.equal(found.types.includes('fault'), false, 'a let is not a fault');
   assert.equal(found.g.match.serveNumber, 1, 'still the first serve');
   assert.deepEqual(found.g.match.points ?? [0, 0], [0, 0], 'no point is played');
+});
+
+// ---------------------------------------------------------------- surfaces
+test('grass bounces lowest and fastest, clay highest and slowest, hard in between', () => {
+  const after = (surface) => {
+    const b = createBall();
+    b.court = SURFACES[surface];
+    Object.assign(b, { y: 1, vy: -6, vz: -20, spin: 'flat' });
+    stepBall(b, 0.2, null);
+    return { up: b.vy, pace: -b.vz };
+  };
+  const clay = after('clay'), grass = after('grass'), hard = after('hard');
+  assert.ok(grass.up < hard.up && hard.up < clay.up, 'bounce height: grass < hard < clay');
+  assert.ok(grass.pace > hard.pace && hard.pace > clay.pace, 'pace kept: grass > hard > clay');
+});
+
+test('a game on each surface uses that surface; slides are shortest on hard courts', () => {
+  const slide = (surface) => {
+    const g = createGame({ rng: seededRng(4), surface, firstServer: 1 });
+    assert.equal(g.surface, surface);
+    assert.equal(g.ball.court, SURFACES[surface]);
+    g.start();
+    g.state = 'pointOver';
+    const p = g.players[0];
+    Object.assign(p, { x: -6, z: 13, vx: 0, vz: 0 });
+    for (let i = 0; i < 240; i++) { g.timer = 9; g.step(BALL.fixedDt, { x: 1, y: 0 }); }
+    g.events.length = 0;
+    let len = 0;
+    for (let i = 0; i < 240; i++) {
+      g.timer = 9; g.step(BALL.fixedDt, { x: 0, y: 0 });
+      for (const e of g.events) if (e.type === 'slideEnd') len = e.x1 - e.x0;
+      g.events.length = 0;
+    }
+    return len;
+  };
+  const clay = slide('clay'), grass = slide('grass'), hard = slide('hard');
+  assert.ok(clay > grass && grass > hard && hard > 0, `slide length clay ${clay.toFixed(2)} > grass ${grass.toFixed(2)} > hard ${hard.toFixed(2)}`);
 });
 
 // ---------------------------------------------------------------- split step

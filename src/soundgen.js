@@ -201,6 +201,10 @@ const BALL_RECIPES = {
   smash: { pop: 0.8, popAmp: 0.7, bursts: [[1000, 1.2, 3.0, 1.0], [2500, 1.5, 1.7, 0.65], [5000, 1, 0.8, 0.32]], low: 0.4 },
   // ball on clay: wider, softer pulse, darker and grittier
   bounce: { pop: 2.6, popAmp: 1, bursts: [[650, 1, 3.5, 0.5], [1800, 1.2, 1.5, 0.18], [4200, 0.9, 0.8, 0.12]], low: 0.45 },
+  // ball on grass: softer and duller still, the turf soaks it up
+  bounceGrass: { pop: 3.4, popAmp: 1, bursts: [[420, 0.9, 3.5, 0.35], [1150, 1, 1.4, 0.1], [3400, 0.8, 0.6, 0.05]], low: 0.55 },
+  // ball on a hard court: a crisp, hollow pock off the acrylic
+  bounceHard: { pop: 1.5, popAmp: 0.9, bursts: [[950, 1.2, 2.6, 0.75], [2300, 1.4, 1.5, 0.4], [4800, 1, 0.7, 0.22]], low: 0.35 },
 };
 
 function filterBurst(out, sr, f, q, decayMs, level, rnd, start = 0) {
