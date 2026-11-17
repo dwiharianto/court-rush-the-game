@@ -18,6 +18,7 @@ function makePlayer(side, speed) {
     facing: side === 0 ? Math.PI : 0,
     action: 'ready', actionT: 0,
     swing: null, // { kind, hand, plan, done }
+    slide: false, slideT: 0, slideX: 0, slideZ: 0, // a slide in progress and where it started
   };
 }
 
@@ -53,15 +54,43 @@ export function createGame(options = {}) {
 
   // ------------------------------------------------------------ movement
   function drive(p, wx, wz, top, dt) {
-    const k = Math.min(1, dt * PLAYER.accel);
-    p.vx += (wx * top - p.vx) * k;
-    p.vz += (wz * top - p.vz) * k;
+    const speed = Math.hypot(p.vx, p.vz);
+    if (!p.slide && speed >= PLAYER.slideMinSpeed) {
+      // braking or cutting hard at speed: the feet slide instead of stopping dead
+      // a hard reversal is a plant and push-off, not a slide
+      const along = (wx * top * p.vx + wz * top * p.vz) / speed;
+      if (along < speed * PLAYER.slideTrigger && along > -speed * PLAYER.slideReverseLimit) {
+        p.slide = true;
+        p.slideT = 0;
+        p.slideX = p.x; p.slideZ = p.z;
+        events.push({ type: 'slide', side: p.side, x: p.x, z: p.z, speed });
+      }
+    }
+    if (p.slide) {
+      p.slideT += dt;
+      // pushing back the other way digs in harder than just braking
+      const reverse = wx * p.vx + wz * p.vz < 0;
+      const ns = Math.max(0, speed - (reverse ? PLAYER.slideDecelReverse : PLAYER.slideDecel) * dt);
+      const f = speed > 0 ? ns / speed : 0;
+      p.vx *= f; p.vz *= f;
+      if (ns <= PLAYER.slideEndSpeed) endSlide(p);
+    } else {
+      const k = Math.min(1, dt * PLAYER.accel);
+      p.vx += (wx * top - p.vx) * k;
+      p.vz += (wz * top - p.vz) * k;
+    }
     p.x += p.vx * dt;
     p.z += p.vz * dt;
     const d = p.z * p.sign;
     if (Math.abs(p.x) > PLAYER.maxX) { p.x = Math.sign(p.x) * PLAYER.maxX; p.vx = 0; }
     if (d < PLAYER.minZ) { p.z = p.sign * PLAYER.minZ; p.vz = 0; }
     if (d > PLAYER.maxZ) { p.z = p.sign * PLAYER.maxZ; p.vz = 0; }
+  }
+
+  function endSlide(p, silent = false) {
+    if (!p.slide) return;
+    p.slide = false;
+    if (!silent) events.push({ type: 'slideEnd', side: p.side, x0: p.slideX, z0: p.slideZ, x1: p.x, z1: p.z });
   }
 
   function topSpeed(p) {
@@ -95,7 +124,7 @@ export function createGame(options = {}) {
     server.z = server.sign * (COURT.halfLength + SERVE.standBehind);
     receiver.x = -sx * SERVE.receiverX;
     receiver.z = receiver.sign * (COURT.halfLength + SERVE.receiverBehind);
-    for (const p of players) { p.vx = p.vz = 0; }
+    for (const p of players) { p.vx = p.vz = 0; endSlide(p, true); }
     setAction(server, 'serveReady');
     setAction(receiver, 'ready');
     ball.visible = true;
@@ -364,7 +393,8 @@ export function createGame(options = {}) {
     const dx = d.x - cpu.x, dz = d.z - cpu.z;
     const dist = Math.hypot(dx, dz);
     const top = topSpeed(cpu) * d.speed;
-    const want = Math.min(top, dist * AI.arrive);
+    // brake on a curve that stops on the spot, so it only slides when it has to
+    const want = Math.min(top, dist * AI.arrive, Math.sqrt(2 * AI.brake * dist));
     const f = dist > 0.02 ? want / (dist * top || 1) : 0;
     drive(cpu, dx * f, dz * f, top, dt);
   }
@@ -516,11 +546,18 @@ async function boot() {
       switch (e.type) {
         case 'hit':
           world.setSpeed(e.kmh);
+          views[1 - e.side].splitStep(); // the opponent reacts with a split step
           audio.play(e.kind === 'smash' || e.kind === 'serve' ? 'smash' : e.kind === 'slice' ? 'slice' : 'hit');
           break;
         case 'timing':
           hud.showTiming(e.kind, e.smash ? 'SMASH' : e.volley ? 'VOLLEY' : '');
           if (e.kind === 'perfect') audio.play('perfect');
+          break;
+        case 'slide':
+          audio.play('slide');
+          break;
+        case 'slideEnd':
+          world.addSlideTrail(e.x0, e.z0, e.x1, e.z1);
           break;
         case 'bounce':
           world.addBounceMark(e.x, e.z);
@@ -584,6 +621,7 @@ async function boot() {
   const frameInput = { x: 0, y: 0, drive: false, slice: false, lob: false };
   let last = performance.now();
   let acc = 0;
+  let dustClock = 0;
 
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -612,6 +650,21 @@ async function boot() {
     views[0].update(dt, game.players[0]);
     views[1].update(dt, game.players[1]);
     world.updateBall(game.ball, dt);
+    // clay dust kicked up ahead of a sliding foot
+    dustClock += dt;
+    for (const p of game.players) {
+      if (!p.slide) continue;
+      const sp = Math.hypot(p.vx, p.vz);
+      if (sp < 0.5) continue;
+      const ux = p.vx / sp, uz = p.vz / sp;
+      const every = 1 / (18 + sp * 6);
+      for (let n = 0; n < 3 && dustClock >= every; n++) {
+        world.slideDust(p.x + ux * 0.35, p.z + uz * 0.35, ux * sp * 0.3, uz * sp * 0.3, Math.min(1, sp / 6));
+        dustClock -= every;
+      }
+    }
+    if (dustClock > 0.2) dustClock = 0.2;
+    world.updateFx(dt);
     world.setClock(matchTime);
     world.updateCamera(dt, game.players[0].x);
     renderer.render(world.scene, world.camera);

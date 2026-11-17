@@ -451,6 +451,114 @@ function buildDressing(scene) {
 }
 
 // ---------------------------------------------------------------- ball
+// Slide trails scraped into the clay, and puffs of clay dust at the sliding foot.
+function buildSlideFx(scene) {
+  const onClay = (x, z) => Math.abs(x) <= COURT.doublesHalf && Math.abs(z) <= COURT.halfLength;
+  // trail texture: a soft streak with scuffed edges, darker at the end where the foot stopped
+  const c = document.createElement('canvas');
+  c.width = 32; c.height = 128;
+  const g = c.getContext('2d');
+  for (let y = 0; y < 128; y++) {
+    const along = y / 127;
+    for (let x = 0; x < 32; x++) {
+      const across = Math.abs(x - 15.5) / 16;
+      let a = Math.max(0, 1 - Math.pow(across, 2.2)) * (0.45 + 0.55 * along);
+      a *= 0.75 + 0.25 * Math.sin(x * 2.3 + y * 0.31) * Math.sin(y * 0.17);
+      g.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+      g.fillRect(x, y, 1, 1);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  const trails = [];
+  const trailGeo = new THREE.PlaneGeometry(1, 1);
+  for (let i = 0; i < 6; i++) {
+    const m = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
+      map: tex, color: 0x4a1a0d, transparent: true, opacity: 0, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8, // above the clay and lines
+    }));
+    m.rotation.order = 'YXZ';
+    m.rotation.x = -Math.PI / 2;
+    m.position.y = 0.011;
+    m.renderOrder = 3;
+    m.visible = false;
+    scene.add(m);
+    trails.push(m);
+  }
+  let nextTrail = 0;
+
+  // dust: small billboard sprites in a pool
+  const dc = document.createElement('canvas');
+  dc.width = dc.height = 32;
+  const dg = dc.getContext('2d');
+  const grad = dg.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  dg.fillStyle = grad;
+  dg.fillRect(0, 0, 32, 32);
+  const dustTex = new THREE.CanvasTexture(dc);
+  const dust = [];
+  for (let i = 0; i < 48; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dustTex, color: 0xe2ab86, transparent: true, opacity: 0, depthWrite: false }));
+    sp.visible = false;
+    sp.renderOrder = 5;
+    scene.add(sp);
+    dust.push({ sp, vx: 0, vy: 0, vz: 0, life: 0, max: 1 });
+  }
+  let nextDust = 0;
+
+  return {
+    // one trail from where a slide started to where it stopped
+    addTrail(x0, z0, x1, z1) {
+      const dx = x1 - x0, dz = z1 - z0;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.25 || !onClay(x1, z1)) return;
+      const m = trails[nextTrail];
+      nextTrail = (nextTrail + 1) % trails.length;
+      m.position.x = (x0 + x1) / 2;
+      m.position.z = (z0 + z1) / 2;
+      m.rotation.y = Math.atan2(dx, dz);
+      m.rotation.z = Math.PI; // texture runs from start (top) to stop (bottom)
+      m.scale.set(0.3, len + 0.25, 1);
+      m.material.opacity = 0.9;
+      m.visible = true;
+    },
+    // a puff at (x, z) kicked along (dx, dz); amount 0..1
+    puff(x, z, dx, dz, amount, rand = Math.random) {
+      if (!onClay(x, z)) return;
+      const d = dust[nextDust];
+      nextDust = (nextDust + 1) % dust.length;
+      d.sp.position.set(x + (rand() - 0.5) * 0.15, 0.06, z + (rand() - 0.5) * 0.15);
+      d.vx = dx * (0.6 + rand() * 0.8) + (rand() - 0.5) * 0.6;
+      d.vz = dz * (0.6 + rand() * 0.8) + (rand() - 0.5) * 0.6;
+      d.vy = 0.35 + rand() * 0.5;
+      d.max = d.life = 0.5 + rand() * 0.5;
+      d.size = 0.18 + 0.26 * amount;
+      d.alpha = 0.5 + 0.4 * amount;
+      d.sp.visible = true;
+    },
+    update(dt) {
+      for (const m of trails) {
+        if (!m.visible) continue;
+        m.material.opacity -= dt * 0.06;
+        if (m.material.opacity <= 0) m.visible = false;
+      }
+      for (const d of dust) {
+        if (!d.sp.visible) continue;
+        d.life -= dt;
+        if (d.life <= 0) { d.sp.visible = false; continue; }
+        const u = 1 - d.life / d.max;
+        d.vx *= 1 - dt * 2.5; d.vz *= 1 - dt * 2.5; d.vy -= dt * 0.6;
+        d.sp.position.x += d.vx * dt;
+        d.sp.position.y = Math.max(0.03, d.sp.position.y + d.vy * dt);
+        d.sp.position.z += d.vz * dt;
+        const size = d.size * (1 + u * 2.2);
+        d.sp.scale.set(size, size, 1);
+        d.sp.material.opacity = d.alpha * (1 - u) * Math.min(1, u * 8);
+      }
+    },
+  };
+}
+
 function buildBall(scene) {
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(BALL.visualRadius, 16, 12),
@@ -481,7 +589,10 @@ function buildBall(scene) {
   const marks = [];
   const markGeo = new THREE.CircleGeometry(BALL.visualRadius * 1.2, 12);
   for (let i = 0; i < 8; i++) {
-    const m = new THREE.Mesh(markGeo, new THREE.MeshBasicMaterial({ color: 0x5a2416, transparent: true, opacity: 0, depthWrite: false }));
+    const m = new THREE.Mesh(markGeo, new THREE.MeshBasicMaterial({
+      color: 0x5a2416, transparent: true, opacity: 0, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8, // the clay is offset too
+    }));
     m.rotation.x = -Math.PI / 2;
     m.position.y = 0.012;
     m.renderOrder = 3;
@@ -549,6 +660,7 @@ export function createWorld() {
   const boards = buildArena(scene);
   buildDressing(scene);
   const ballView = buildBall(scene);
+  const slideFx = buildSlideFx(scene);
   buildLights(scene);
 
   const camera = new THREE.PerspectiveCamera(CAMERA.fov, CAMERA.baseAspect, CAMERA.near, CAMERA.far);
@@ -581,5 +693,6 @@ export function createWorld() {
     scene, camera, resize, updateCamera,
     setSpeed: boards.setSpeed, setClock: boards.setClock,
     updateBall: ballView.update, addBounceMark: ballView.addMark,
+    addSlideTrail: slideFx.addTrail, slideDust: slideFx.puff, updateFx: slideFx.update,
   };
 }

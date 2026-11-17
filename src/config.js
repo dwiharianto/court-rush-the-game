@@ -101,6 +101,13 @@ export const PLAYER = {
   minZ: 1.2,
   maxZ: 16.5,
   maxX: 8.6,
+  // Sliding: braking or turning hard at speed turns into a slide on the clay.
+  slideMinSpeed: 3.8, // m/s needed to start a slide
+  slideTrigger: 0.5, // slide when the wanted speed along the run drops below this fraction
+  slideDecel: 12, // m/s^2 while sliding (a normal stop is much quicker)
+  slideDecelReverse: 24, // m/s^2 when pushing back the other way mid-slide
+  slideReverseLimit: 0.3, // wanting to go back the other way faster than this fraction of speed: no slide
+  slideEndSpeed: 0.8,
 };
 
 export const AUDIO = {
@@ -122,7 +129,11 @@ export const SERVE_ANIM = {
 };
 
 export const ANIM = {
-  strideLength: 2.3, // metres per full run cycle
+  strideLength: 2.3, // metres per full run cycle at top speed
+  strideBase: 1.0, // stride length per cycle at walking pace; grows with speed
+  shuffleMax: 3.2, // below this speed a sideways move is a side shuffle facing the net
+  shuffleStride: 1.1,
+  splitTime: 0.34, // split step duration when the opponent hits
   runBlendSpeed: 2.4, // speed at which the run pose is fully blended in
   runBlendRate: 9,
   turnRate: 10,
@@ -249,6 +260,7 @@ export const AI = {
   minZ: 1.2,
   maxX: 8.6,
   arrive: 7, // 1/s, slows the CPU as it nears its spot
+  brake: 9, // m/s^2, the braking curve it runs on as it arrives
 };
 
 export const SERVE = {

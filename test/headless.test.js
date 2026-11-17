@@ -221,8 +221,40 @@ test('a ball on the player\'s left is a backhand, and slice at the net is a drop
   assert.ok(bounce.z < 0 && bounce.z > -5.5, `drop volley lands short (z ${bounce.z.toFixed(2)})`);
 });
 
+// ---------------------------------------------------------------- sliding
+function runThenRelease(heldAfter) {
+  const g = createGame({ rng: seededRng(4), firstServer: 1 });
+  g.start();
+  g.state = 'pointOver'; // free movement, no serve logic
+  const p = g.players[0];
+  Object.assign(p, { x: -6, z: 13, vx: 0, vz: 0 });
+  const log = [];
+  const run = { x: 1, y: 0, drive: false, slice: false, lob: false };
+  for (let i = 0; i < 120 * 1.5; i++) { g.timer = 9; g.step(BALL.fixedDt, run); } // full sprint to the right
+  const startX = p.x;
+  g.events.length = 0;
+  for (let i = 0; i < 120 * 1.5; i++) {
+    g.timer = 9;
+    g.step(BALL.fixedDt, heldAfter);
+    for (const e of g.events) log.push(e);
+    g.events.length = 0;
+  }
+  return { log, travel: p.x - startX, p };
+}
+
+test('stopping from a sprint slides on the clay, reversing does not', () => {
+  const stop = runThenRelease({ x: 0, y: 0 });
+  assert.ok(stop.log.some((e) => e.type === 'slide'), 'letting go at full speed starts a slide');
+  const end = stop.log.find((e) => e.type === 'slideEnd');
+  assert.ok(end && end.x1 - end.x0 > 0.8, `the slide carries the player on (${end && (end.x1 - end.x0).toFixed(2)} m)`);
+  assert.equal(stop.p.slide, false, 'the slide ends');
+  const back = runThenRelease({ x: -1, y: 0 });
+  assert.equal(back.log.some((e) => e.type === 'slide'), false, 'a hard reversal plants and pushes off');
+});
+
 // ---------------------------------------------------------------- long run with invariants
 test('several hundred points of play keep the rules and score consistent', () => {
+  let totalFaults = 0;
   for (const [difficulty, profile, seed] of [['easy', 'casual', 11], ['normal', 'solid', 12], ['hard', 'sharp', 13]]) {
     let m = null;
     let lastHit = null; // { side, serve }
@@ -301,8 +333,9 @@ test('several hundred points of play keep the rules and score consistent', () =>
     assert.ok(games >= 30, `${where()}: games change (${games})`);
     assert.ok(stats.matches >= 1, `${where()}: at least one full set completes`);
     assert.ok(deuces >= 1, `${where()}: deuce comes up`);
-    assert.ok(stats.faults >= 1, `${where()}: faults happen`);
+    totalFaults += stats.faults; // the sharp bot can go a whole run without one
     assert.ok(stats.reasons['cpu wins: out'] || stats.reasons['human wins: out'], `${where()}: out balls`);
     assert.ok(stats.human > 0 && stats.cpu > 0, `${where()}: both players win points`);
   }
+  assert.ok(totalFaults >= 1, 'faults happen');
 });

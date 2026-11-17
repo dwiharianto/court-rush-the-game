@@ -512,54 +512,159 @@ function sampleClip(keys, t, out) {
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+// Slide poses, for a slide toward the figure's left (+x local). Mirrored for the right.
+// Lateral: the outside leg slides out straight, the inside knee folds deep.
+const SLIDE_SIDE = makePose({
+  lHip: 0.2, lHipZ: 0.85, lKnee: 0.12,
+  rHip: 0.95, rHipZ: 0.05, rKnee: 1.75,
+  hipsYaw: 0.25, torsoX: 0.45, torsoY: 0.1, torsoZ: 0.35, headX: -0.25, headY: -0.3,
+  rShX: 0.5, rShZ: 0.55, rElbow: 1.2, rWristX: -0.5, rWristZ: -0.3,
+  lShX: 0.35, lShZ: 1.15, lElbow: 0.4,
+});
+// Forward: front leg slides ahead nearly straight, back knee drops toward the clay.
+const SLIDE_FWD = makePose({
+  lHip: 1.15, lHipZ: 0.12, lKnee: 0.2,
+  rHip: -0.1, rHipZ: 0.12, rKnee: 1.8,
+  torsoX: 0.25, headX: -0.1,
+  rShX: 0.45, rShZ: 0.5, rElbow: 1.2, rWristX: -0.5, rWristZ: -0.3,
+  lShX: 0.6, lShZ: 0.75, lElbow: 0.6,
+});
+const MIRROR_PAIRS = [['lHip', 'rHip'], ['lHipZ', 'rHipZ'], ['lKnee', 'rKnee']];
+const MIRROR_FLIP = ['hipsYaw', 'torsoY', 'torsoZ', 'headY'];
+
+// out = pose mirrored left to right, legs only plus the twist and lean keys
+function mirrorLegs(out, pose) {
+  copyPose(out, pose);
+  for (const [l, r] of MIRROR_PAIRS) { out[l] = pose[r]; out[r] = pose[l]; }
+  for (const k of MIRROR_FLIP) out[k] = -pose[k];
+  return out;
+}
+
+const smooth = (cur, target, rate, dt) => cur + (target - cur) * Math.min(1, dt * rate);
+
 export function createCharacter(options = {}) {
   const rig = createFigure({ racket: true, ...options });
-  const loco = makePose(), run = makePose(), idle = makePose(), clip = makePose(), out = makePose();
+  const loco = makePose(), run = makePose(), idle = makePose(), shuffle = makePose(), clip = makePose(), out = makePose();
+  const slidePose = makePose(), tmp = makePose();
   let time = Math.random() * 10;
-  let phase = 0;
-  let runBlend = 0;
+  let phase = 0, shufflePhase = 0;
+  let runBlend = 0, shuffleBlend = 0, slideBlend = 0;
   let yaw = 0;
   let actionBlend = 0;
   let held = null;
+  let lastFwd = 0, lastSide = 0, accFwd = 0, accSide = 0;
+  let wasSliding = false, slideSide = 1, slideLateral = 1;
+  let splitT = 99;
 
   function update(dt, s) {
     time += dt;
     const speed = Math.hypot(s.vx, s.vz);
     const sf = Math.sin(s.facing), cf = Math.cos(s.facing);
-    const fwd = s.vx * sf + s.vz * cf; // along the facing direction
+    const fwd = s.vx * sf + s.vz * cf; // along the facing direction (toward the net)
     const side = s.vx * cf - s.vz * sf; // toward the figure's left
     const acting = s.action && s.action !== 'ready' && CLIPS[s.action];
+    const sliding = !!s.slide;
+
+    // smoothed acceleration, for leaning into a sprint and back when braking
+    if (dt > 0) {
+      accFwd = smooth(accFwd, (fwd - lastFwd) / dt, 8, dt);
+      accSide = smooth(accSide, (side - lastSide) / dt, 8, dt);
+    }
+    lastFwd = fwd; lastSide = side;
+
+    // a slow sideways move is a side shuffle facing the net; faster ones turn and run
+    const lateral = speed > 0.3 ? Math.abs(side) / speed : 0;
+    const wantShuffle = !sliding && !acting && speed > 0.3 && speed < ANIM.shuffleMax && lateral > 0.7 ? 1 : 0;
+    shuffleBlend = smooth(shuffleBlend, wantShuffle, 7, dt);
+
+    // a slide locks its direction when it starts
+    if (sliding && !wasSliding) {
+      slideSide = side >= 0 ? 1 : -1;
+      slideLateral = clamp((lateral - 0.35) / 0.4, 0, 1);
+    }
+    wasSliding = sliding;
+    slideBlend = smooth(slideBlend, sliding ? 1 : 0, sliding ? 16 : 6, dt);
 
     // body turn toward the movement direction; straight back is a backpedal
     let yawTarget = 0, dir = 1;
-    if (speed > 0.4 && !acting) {
+    if (speed > 0.4 && !acting && !sliding && wantShuffle === 0) {
       if (fwd < 0 && Math.abs(side) < ANIM.backpedalRatio * -fwd) dir = -1;
       else yawTarget = clamp(Math.atan2(side, fwd), -ANIM.maxTurn, ANIM.maxTurn);
     }
-    yaw += (yawTarget - yaw) * Math.min(1, dt * ANIM.turnRate);
-    runBlend += (clamp(speed / ANIM.runBlendSpeed, 0, 1) - runBlend) * Math.min(1, dt * ANIM.runBlendRate);
-    phase += dir * speed * (Math.PI * 2 / ANIM.strideLength) * dt;
+    yaw = smooth(yaw, yawTarget, sliding ? ANIM.turnRate * 1.6 : ANIM.turnRate, dt);
+    runBlend = smooth(runBlend, clamp(speed / ANIM.runBlendSpeed, 0, 1) * (1 - shuffleBlend), ANIM.runBlendRate, dt);
 
-    // ready stance with a light bounce (knees flex, hips follow because feet are planted)
+    // stride grows with speed, so cadence stays lively at low speed
+    const stride = ANIM.strideBase + (ANIM.strideLength - ANIM.strideBase) * clamp(speed / 6.2, 0, 1);
+    phase += dir * speed * (Math.PI * 2 / stride) * dt;
+    shufflePhase += Math.abs(side) * (Math.PI * 2 / ANIM.shuffleStride) * dt;
+
+    // ready stance: light bounce and a slow weight shift
     copyPose(idle, READY);
     const b = Math.sin(time * Math.PI * 2 * ANIM.idleHz);
+    const sway = Math.sin(time * 0.9);
     idle.lKnee += b * 0.07; idle.rKnee += b * 0.07;
     idle.lHip += b * 0.035; idle.rHip += b * 0.035;
     idle.rShX += b * 0.03; idle.lShX += b * 0.03;
+    idle.torsoZ = sway * 0.04; idle.hipsYaw = sway * 0.05; idle.headY = -sway * 0.05;
     idle.lift = Math.max(0, -b) * 0.012;
 
-    // run cycle
-    const sn = Math.sin(phase), cs = Math.cos(phase);
+    // split step: a small hop as the opponent strikes, landing with bent knees
+    splitT += dt;
+    if (splitT < ANIM.splitTime) {
+      const u = splitT / ANIM.splitTime;
+      const hop = u < 0.5 ? Math.sin(u * 2 * Math.PI) : 0;
+      const land = u >= 0.45 ? Math.sin((u - 0.45) / 0.55 * Math.PI) : 0;
+      idle.lift += Math.max(0, hop) * 0.07;
+      idle.lHipZ += 0.12 * land; idle.rHipZ += 0.12 * land;
+      idle.lKnee += 0.35 * land; idle.rKnee += 0.35 * land;
+      idle.lHip += 0.17 * land; idle.rHip += 0.17 * land;
+    }
+
+    // run cycle: hips and shoulders counter-rotate, arms pump, knees drive
+    const k = clamp(speed / 6.2, 0, 1);
+    const sn = Math.sin(phase);
+    const hipAmp = 0.3 + 0.32 * k, kneeAmp = 0.7 + 0.9 * k, armAmp = 0.35 + 0.45 * k;
     copyPose(run, READY);
-    run.lHip = 0.3 + 0.8 * sn; run.rHip = 0.3 - 0.8 * sn;
-    run.lKnee = 0.35 + 0.95 * Math.max(0, cs); run.rKnee = 0.35 + 0.95 * Math.max(0, -cs);
-    run.lHipZ = 0.06; run.rHipZ = 0.06;
-    run.torsoX = 0.3; run.torsoY = -0.18 * sn - yaw * 0.2;
-    run.headY = -yaw * 0.55; run.headX = -0.15;
-    run.lShX = 0.15 - 0.7 * sn; run.lElbow = 1.3; run.lShZ = 0.15;
-    run.rShX = 0.35 + 0.35 * sn; run.rElbow = 1.2;
-    run.lift = 0.035 * Math.abs(sn);
+    run.lHip = 0.3 + hipAmp * sn; run.rHip = 0.3 - hipAmp * sn;
+    // the knee folds after push-off and through the swing, then straightens to land
+    const kl = Math.cos(phase + Math.PI / 4), kr = Math.cos(phase + Math.PI + Math.PI / 4);
+    run.lKnee = 0.35 + kneeAmp * Math.pow(Math.max(0, kl), 1.2);
+    run.rKnee = 0.35 + kneeAmp * Math.pow(Math.max(0, kr), 1.2);
+    run.lHipZ = 0.05; run.rHipZ = 0.05;
+    run.hipsYaw = -0.2 * sn * k;
+    run.torsoY = 0.32 * sn * k - yaw * 0.15;
+    // lean forward with speed and acceleration, back when braking, into the turn sideways
+    run.torsoX = 0.2 + 0.18 * k + clamp(accFwd * 0.03, -0.3, 0.2);
+    run.torsoZ = clamp(-accSide * 0.025, -0.25, 0.25);
+    run.headY = -run.hipsYaw - run.torsoY - yaw * 0.5; run.headX = -0.18 - 0.1 * k;
+    run.lShX = 0.2 - armAmp * sn; run.lShZ = 0.14; run.lElbow = 1.35 - 0.3 * sn;
+    run.rShX = 0.35 + armAmp * 0.65 * sn; run.rShZ = 0.2; run.rElbow = 1.25 + 0.2 * sn;
+    run.lift = (0.015 + 0.04 * k) * Math.abs(sn);
+
+    // side shuffle: legs open and close, body stays square to the net
+    const ss = Math.sin(shufflePhase);
+    copyPose(shuffle, READY);
+    shuffle.lHipZ = 0.24 + 0.2 * ss; shuffle.rHipZ = 0.24 - 0.2 * ss;
+    shuffle.lKnee = 0.95 + 0.15 * Math.max(0, -ss); shuffle.rKnee = 0.95 + 0.15 * Math.max(0, ss);
+    shuffle.lHip = 0.55; shuffle.rHip = 0.55;
+    shuffle.torsoX = 0.35; shuffle.torsoZ = clamp(-side * 0.03, -0.12, 0.12);
+    shuffle.lift = 0.035 * Math.abs(Math.sin(shufflePhase * 2));
+
     blendPose(loco, idle, run, runBlend);
+    if (shuffleBlend > 0.001) blendPose(loco, loco, shuffle, shuffleBlend);
+
+    // slide: lateral and forward flavours, mirrored to the slide side
+    if (slideBlend > 0.001) {
+      blendPose(tmp, SLIDE_FWD, SLIDE_SIDE, slideLateral);
+      if (slideSide < 0) mirrorLegs(slidePose, tmp);
+      else copyPose(slidePose, tmp);
+      if (slideSide < 0) { // the arms are not mirrored: keep the racket arm where it is
+        for (const key of ['lShX', 'lShZ', 'lElbow', 'rShX', 'rShZ', 'rElbow', 'rWristX', 'rWristZ']) slidePose[key] = tmp[key];
+        slidePose.lShZ = 0.55; slidePose.rShZ = 1.0; slidePose.rElbow = 0.7; // balance arm swaps over
+      }
+      blendPose(loco, loco, slidePose, slideBlend);
+    }
 
     if (held) {
       copyPose(out, NAMED[held] || READY);
@@ -567,9 +672,9 @@ export function createCharacter(options = {}) {
       sampleClip(CLIPS[s.action], s.actionT, clip);
       actionBlend = 1;
       copyPose(out, clip);
-      // keep the legs running if the player swings on the move
-      const legW = 1 - 0.8 * runBlend;
-      for (const k of LEG_KEYS) out[k] = loco[k] + (clip[k] - loco[k]) * legW;
+      // legs keep running, or sliding, if the player swings on the move
+      const legW = (1 - 0.8 * runBlend) * (1 - slideBlend);
+      for (const key of LEG_KEYS) out[key] = loco[key] + (clip[key] - loco[key]) * legW;
     } else {
       // ease back from the last clip pose into locomotion
       actionBlend = Math.max(0, actionBlend - dt * 8);
@@ -588,6 +693,7 @@ export function createCharacter(options = {}) {
     object3d: rig.object3d,
     setPose(name) { held = name; },
     update,
+    splitStep() { splitT = 0; },
     // world position of the racket head centre (for effects)
     getRacketHead(target) {
       headLocal.set(0, rig.racket.userData.headY, 0);

@@ -61,6 +61,7 @@ export function createAudio() {
     slice: () => { noise(0.09, { gain: 0.35, freq: 2600, q: 1.5 }); tone(200, 0.06, { type: 'triangle', gain: 0.2, to: 120 }); },
     smash: () => { noise(0.08, { gain: 0.7, freq: 1500, q: 0.6 }); tone(300, 0.11, { type: 'triangle', gain: 0.5, to: 90 }); },
     bounce: () => { tone(170, 0.09, { gain: 0.3, to: 80 }); noise(0.04, { gain: 0.12, freq: 700, type: 'lowpass' }); },
+    slide: () => { noise(0.42, { gain: 0.16, freq: 900, q: 0.7 }); noise(0.3, { gain: 0.08, freq: 2600, q: 1.2, delay: 0.04 }); },
     net: () => { noise(0.22, { gain: 0.3, freq: 500, type: 'lowpass' }); tone(120, 0.12, { gain: 0.15, to: 70 }); },
     perfect: () => { tone(1320, 0.1, { gain: 0.1 }); tone(1980, 0.14, { gain: 0.07, delay: 0.05 }); },
     fault: () => { tone(210, 0.22, { type: 'square', gain: 0.09 }); },
