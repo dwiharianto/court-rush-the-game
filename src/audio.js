@@ -5,7 +5,7 @@
 // stadium bed that settles during points, applause sized to each point, and
 // whistles for the big ones. Everything runs through a stadium reverb.
 import { AUDIO } from './config.js';
-import { applause, grit, impulse, makeRng, roomTone, whistles } from './soundgen.js';
+import { applause, ballSound, grit, impulse, makeRng, roomTone, whistles } from './soundgen.js';
 
 const CROWD_SR = 22050; // crowd buffers are generated at a lower rate; it is all below 5 kHz
 
@@ -13,7 +13,7 @@ export function createAudio(options = {}) {
   let ctx = null;
   let master = null, sfx = null, crowd = null, verbSend = null;
   let noiseBuf = null, gritBuf = null;
-  const bank = { applauseLong: [], applauseShort: [], whistles: [] };
+  const bank = { applauseLong: [], applauseShort: [], whistles: [], ball: {} };
   let murmurGain = null;
   let crowdMode = 'chatter', swellIn = 0;
   let muted = false, paused = false;
@@ -58,6 +58,12 @@ export function createAudio(options = {}) {
     for (let i = 0; i < white.length; i++) white[i] = Math.random() * 2 - 1;
     noiseBuf = buffer([white], sr);
     gritBuf = buffer(grit(sr, 1.5, makeRng(11)), sr);
+    // several variations of each ball sound, so repeated hits never sound identical
+    const br = makeRng(21);
+    for (const kind of ['hit', 'volley', 'slice', 'serve', 'smash', 'bounce']) {
+      bank.ball[kind] = [];
+      for (let i = 0; i < 6; i++) bank.ball[kind].push(buffer(ballSound(sr, kind, br), sr));
+    }
 
     // the crowd takes a moment to generate; do it in slices so nothing stalls
     const r = makeRng(1234);
@@ -138,39 +144,29 @@ export function createAudio(options = {}) {
   }
 
   // ------------------------------------------------------------ sound effects
-  // Racket on ball. power 0..1 from shot speed. Slices brush, serves and smashes crack.
-  const STRIKE = {
-    hit: { modes: [[640, 0.028, 0.36], [1350, 0.02, 0.32], [2800, 0.01, 0.18]], body: 0.7, bodyF: 1400, click: 0.35, thump: 0.15 },
-    volley: { modes: [[680, 0.018, 0.34], [1450, 0.013, 0.28], [3000, 0.007, 0.15]], body: 0.6, bodyF: 1500, click: 0.3, thump: 0.08 },
-    slice: { modes: [[720, 0.02, 0.26], [1550, 0.015, 0.22], [3200, 0.008, 0.14]], body: 0.45, bodyF: 1900, click: 0.25, thump: 0.06, brush: 0.4 },
-    serve: { modes: [[600, 0.032, 0.4], [1300, 0.022, 0.34], [2700, 0.011, 0.2]], body: 0.85, bodyF: 1300, click: 0.42, thump: 0.25 },
-    smash: { modes: [[580, 0.034, 0.42], [1260, 0.024, 0.35], [2650, 0.012, 0.2]], body: 0.9, bodyF: 1250, click: 0.45, thump: 0.28 },
-  };
-
-  function strike(kind, opts) {
-    const P = STRIKE[kind] || STRIKE.hit;
-    const at = now() + 0.015; // room for the slice brush, which starts just before contact
-    const dest = place(opts);
-    const p = Math.max(0.35, Math.min(1, opts.power ?? 0.7));
-    const v = 0.96 + rnd() * 0.08; // no two hits sound quite the same
-    const k = AUDIO.levels.strike * p;
-    for (const [f, tau, amp] of P.modes) mode(at, f * v, tau * (0.85 + 0.3 * p), amp * k, dest);
-    burst(at, { f: P.bodyF * v, q: 1.3, amp: P.body * k, tau: 0.007, dest });
-    burst(at, { type: 'highpass', f: 4200, amp: P.click * k, tau: 0.0018, dest });
-    mode(at, 150 * v, 0.022, P.thump * k, dest, 0.9);
-    if (P.brush) burst(at - 0.012, { f: 4500, q: 0.8, amp: P.brush * k, attack: 0.01, tau: 0.012, dest });
+  // Racket on ball, or ball on clay: one of the prebuilt variations, at a level set by pace.
+  function ballHit(kind, level, opts) {
+    const list = bank.ball[kind] || bank.ball.hit;
+    const s = ctx.createBufferSource();
+    s.buffer = list[Math.floor(rnd() * list.length)];
+    s.playbackRate.value = 0.97 + rnd() * 0.06;
+    const g = ctx.createGain();
+    g.gain.value = level;
+    s.connect(g).connect(place(opts));
+    s.start(now() + 0.005);
   }
 
-  // Ball on clay: a soft thud with a little grit, louder for faster impacts.
+  // power 0..1 from shot speed. Slices brush, serves and smashes crack.
+  function strike(kind, opts) {
+    const p = Math.max(0.35, Math.min(1, opts.power ?? 0.7));
+    const weight = { serve: 1.15, smash: 1.2, volley: 0.85, slice: 0.8 }[kind] || 1;
+    ballHit(kind, AUDIO.levels.strike * weight * (0.3 + 0.7 * p), opts);
+  }
+
+  // Ball on clay: a soft, gritty thud, louder for faster impacts.
   function bounce(opts) {
-    const at = now() + 0.005;
-    const dest = place(opts);
-    const p = Math.max(0.15, Math.min(1, (opts.speed ?? 6) / 9));
-    const k = AUDIO.levels.bounce * p;
-    const v = 0.95 + rnd() * 0.1;
-    mode(at, 245 * v, 0.022, 0.5 * k, dest, 0.85);
-    burst(at, { type: 'lowpass', f: 900, amp: 0.8 * k, tau: 0.011, dest });
-    burst(at, { f: 3200, q: 0.9, amp: 0.18 * k, tau: 0.005, dest });
+    const p = Math.max(0.12, Math.min(1, (opts.speed ?? 6) / 9));
+    ballHit('bounce', AUDIO.levels.bounce * p, opts);
   }
 
   // Ball into the net: a dull thump and the mesh rattling.
@@ -206,12 +202,6 @@ export function createAudio(options = {}) {
     s.connect(bp).connect(hp).connect(g).connect(dest);
     s.start(at, rnd() * 0.8);
     s.stop(at + dur + 0.02);
-  }
-
-  // Timing feedback on a perfect strike: a faint high ping, kept as a game cue.
-  function perfect() {
-    const at = now() + 0.04;
-    mode(at, 2093, 0.06, AUDIO.levels.perfect, sfx, 1);
   }
 
   // ------------------------------------------------------------ crowd
@@ -265,7 +255,7 @@ export function createAudio(options = {}) {
     },
   };
 
-  const SFX = { strike, bounce, net, slide, perfect };
+  const SFX = { strike, bounce, net, slide };
 
   return {
     // Browsers only allow audio after a user gesture, so this runs on Play.
@@ -278,7 +268,7 @@ export function createAudio(options = {}) {
       }
       if (ctx.state === 'suspended' && !paused && !options.context) ctx.resume();
     },
-    // name: strike | bounce | net | slide | perfect; opts: { kind, power, speed, x, z }
+    // name: strike | bounce | net | slide; opts: { kind, power, speed, x, z }
     play(name, opts = {}) {
       if (!ctx || (ctx.state !== 'running' && !options.context) || !SFX[name]) return;
       if (name === 'strike') strike(opts.kind, opts);

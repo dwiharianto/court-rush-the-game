@@ -590,7 +590,6 @@ async function boot() {
           break;
         case 'timing':
           hud.showTiming(e.kind, e.smash ? 'SMASH' : e.volley ? 'VOLLEY' : '');
-          if (e.kind === 'perfect') audio.play('perfect');
           break;
         case 'slide':
           audio.play('slide', { speed: e.speed, x: e.x, z: e.z });

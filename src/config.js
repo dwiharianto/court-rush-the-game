@@ -118,7 +118,7 @@ export const AUDIO = {
   reverb: 0.22, // send into the stadium reverb
   crowd: 1, // crowd bus
   levels: {
-    strike: 1.15, bounce: 0.75, net: 1.2, slide: 0.33, perfect: 0.085,
+    strike: 1.0, bounce: 0.4, net: 1.2, slide: 0.33,
     chatter: 0.22, hush: 0.05, // stadium bed between points and during play
     applause: 0.82, whistle: 0.2,
   },

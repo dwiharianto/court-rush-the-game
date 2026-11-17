@@ -187,3 +187,73 @@ export function grit(sr, seconds, rnd) {
   }
   return [c];
 }
+
+// ---------------------------------------------------------------- ball sounds
+// A real strike barely rings: strings and felt damp it within milliseconds. So no
+// tones here, just a short pressure pulse (the hollow "pop") and noise bursts
+// that die away in a few milliseconds, each through a broad filter.
+const BALL_RECIPES = {
+  // pop: pulse width (ms); bursts: [centre Hz, Q, decay ms, level]; low: thump level; brush: slice brush level
+  hit: { pop: 0.9, popAmp: 0.6, bursts: [[1100, 1.2, 2.6, 0.9], [2700, 1.6, 1.4, 0.45], [5200, 1, 0.6, 0.2]], low: 0.25 },
+  volley: { pop: 0.85, popAmp: 0.55, bursts: [[1250, 1.3, 2.0, 0.8], [2900, 1.6, 1.1, 0.4], [5400, 1, 0.5, 0.18]], low: 0.12 },
+  slice: { pop: 1.1, popAmp: 0.45, bursts: [[1400, 1.1, 2.2, 0.6], [3200, 1.4, 1.3, 0.35], [5600, 1, 0.6, 0.2]], low: 0.1, brush: 0.3 },
+  serve: { pop: 0.8, popAmp: 0.65, bursts: [[1050, 1.2, 2.8, 1.0], [2600, 1.5, 1.6, 0.6], [5000, 1, 0.7, 0.3]], low: 0.35 },
+  smash: { pop: 0.8, popAmp: 0.7, bursts: [[1000, 1.2, 3.0, 1.0], [2500, 1.5, 1.7, 0.65], [5000, 1, 0.8, 0.32]], low: 0.4 },
+  // ball on clay: wider, softer pulse, darker and grittier
+  bounce: { pop: 2.6, popAmp: 1, bursts: [[650, 1, 3.5, 0.5], [1800, 1.2, 1.5, 0.18], [4200, 0.9, 0.8, 0.12]], low: 0.45 },
+};
+
+function filterBurst(out, sr, f, q, decayMs, level, rnd, start = 0) {
+  const c = bandpass(f, q, sr);
+  const tau = (decayMs / 1000) * sr;
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  const n = Math.min(out.length - start, Math.floor(tau * 9));
+  for (let i = 0; i < n; i++) {
+    const x = (rnd() * 2 - 1) * Math.exp(-i / tau);
+    const y = c[0] * x + c[1] * x2 - c[2] * y1 - c[3] * y2;
+    x2 = x1; x1 = x; y2 = y1; y1 = y;
+    out[start + i] += y * level * 3;
+  }
+}
+
+// One variation of a ball sound, mono, about 80 ms.
+export function ballSound(sr, kind, rnd) {
+  const R = BALL_RECIPES[kind] || BALL_RECIPES.hit;
+  const v = 0.92 + rnd() * 0.16; // each variation a little different
+  const n = Math.floor(0.08 * sr);
+  const out = new Float32Array(n);
+  const start = R.brush ? Math.floor(0.012 * sr) : 0;
+  // brush: strings sliding under the ball just before a slice leaves
+  if (R.brush) {
+    const tau = 0.006 * sr;
+    const c = bandpass(4200, 0.9, sr);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < start + 20; i++) {
+      const env = Math.min(1, i / (0.008 * sr)) * Math.exp(-Math.max(0, i - start) / tau);
+      const x = (rnd() * 2 - 1) * env;
+      const y = c[0] * x + c[1] * x2 - c[2] * y1 - c[3] * y2;
+      x2 = x1; x1 = x; y2 = y1; y1 = y;
+      out[i] += y * R.brush * 2;
+    }
+  }
+  // the pop: one smooth pressure pulse, positive then a smaller negative rebound
+  const w = (R.pop / 1000) * sr * (2 - v);
+  for (let i = 0; i < w * 2.2 && start + i < n; i++) {
+    const t = i / w;
+    const p = t < 1 ? Math.sin(Math.PI * t) : -0.35 * Math.sin(Math.PI * (t - 1) / 1.2);
+    out[start + i] += p * R.popAmp * 0.8;
+  }
+  for (const [f, q, d, l] of R.bursts) filterBurst(out, sr, f * v, q, d, l * (0.85 + rnd() * 0.3), rnd, start);
+  // low thump of the frame or the court, still heavily damped
+  if (R.low) {
+    const tmp = new Float32Array(n);
+    filterBurst(tmp, sr, 220 * v, 0.8, 6, R.low * 2, rnd, start);
+    for (let i = 0; i < n; i++) out[i] += tmp[i];
+  }
+  // a short fade so nothing clicks at the end
+  for (let i = 0; i < 64; i++) out[n - 1 - i] *= i / 64;
+  let m = 1e-9;
+  for (let i = 0; i < n; i++) m = Math.max(m, Math.abs(out[i]));
+  for (let i = 0; i < n; i++) out[i] *= 0.9 / m;
+  return [out];
+}
