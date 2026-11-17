@@ -119,10 +119,14 @@ export const AUDIO = {
   volume: 0.6,
   reverb: 0.22, // send into the stadium reverb
   crowd: 1, // crowd bus
+  gruntPitch: [112, 128], // each player's voice, Hz
+  // how often a player grunts, by shot: big efforts more often, touch shots rarely
+  gruntChance: { serve: 0.5, smash: 0.75, power: 0.35, hit: 0.1, slice: 0.05, volley: 0.04, lob: 0.03 },
   levels: {
     strike: 1.0, bounce: 0.4, net: 1.2, slide: 0.33,
     chatter: 0.22, hush: 0.05, // stadium bed between points and during play
     applause: 0.82, whistle: 0.2,
+    grunt: 0.5, call: 1.6, // line-call volume relative to the master volume
   },
 };
 

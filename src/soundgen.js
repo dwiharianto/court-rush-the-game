@@ -257,3 +257,64 @@ export function ballSound(sr, kind, rnd) {
   for (let i = 0; i < n; i++) out[i] *= 0.9 / m;
   return [out];
 }
+
+// ---------------------------------------------------------------- effort grunt
+// A short "huh!" as a player strikes: a breathy glottal source with jitter, a
+// falling pitch, and a cascade of vocal-tract resonances (Klatt-style formants).
+// Short and noisy on purpose: long, steady synthetic vowels are what sound ghostly.
+const GRUNT_VOWELS = [[640, 1190, 2390], [700, 1220, 2600], [600, 1040, 2250], [560, 1480, 2500]];
+
+function resonator(x, f, bw, sr) {
+  const C = -Math.exp((-2 * Math.PI * bw) / sr);
+  const B = 2 * Math.exp((-Math.PI * bw) / sr) * Math.cos((2 * Math.PI * f) / sr);
+  const A = 1 - B - C;
+  let y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const y = A * x[i] + B * y1 + C * y2;
+    y2 = y1; y1 = y; x[i] = y;
+  }
+  return x;
+}
+
+export function grunt(sr, f0, rnd) {
+  const dur = 0.17 + rnd() * 0.16;
+  const n = Math.floor(dur * sr);
+  const src = new Float32Array(n);
+  const [F1, F2, F3] = GRUNT_VOWELS[Math.floor(rnd() * GRUNT_VOWELS.length)];
+  const p0 = f0 * (0.92 + rnd() * 0.16);
+  const breath = 0.35 + rnd() * 0.3;
+  // glottal flow derivative pulses (Rosenberg), period by period, with jitter and shimmer
+  let t = 0;
+  while (t < n) {
+    const u = t / n;
+    const f = p0 * (1.18 - 0.38 * u); // falls as the breath runs out
+    const T0 = (sr / f) * (1 + (rnd() - 0.5) * 0.06);
+    const amp = 0.8 + rnd() * 0.4;
+    const open = T0 * 0.42, close = T0 * 0.16;
+    for (let k = 0; k < T0 && t + k < n; k++) {
+      let d = 0;
+      if (k < open) d = Math.sin((Math.PI * k) / open) * 0.5; // opening slope
+      else if (k < open + close) d = -Math.sin((Math.PI * (k - open)) / (2 * close)) * 1.4; // sharp closure
+      src[Math.floor(t + k)] += d * amp;
+    }
+    t += T0;
+  }
+  // breath noise, strongest at the start (the push) and in the tail
+  for (let i = 0; i < n; i++) {
+    const u = i / n;
+    src[i] = src[i] * (1 - breath * 0.5) + (rnd() * 2 - 1) * breath * (0.6 + 0.6 * u) * 0.5;
+  }
+  // vocal tract
+  resonator(src, F1, 90, sr);
+  resonator(src, F2, 110, sr);
+  resonator(src, F3, 170, sr);
+  resonator(src, 3400, 250, sr);
+  // a hard onset (glottal stop) and a quick, breathy decay
+  for (let i = 0; i < n; i++) {
+    const tt = i / sr;
+    const env = Math.min(1, tt / 0.012) * Math.exp(-Math.max(0, tt - 0.03) / (dur * 0.35));
+    src[i] *= env;
+  }
+  const out = lowpass([src], 3800, sr);
+  return normalize(out, 0.9);
+}

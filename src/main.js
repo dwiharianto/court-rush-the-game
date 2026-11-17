@@ -1,6 +1,6 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
-import { AI, BALL, CONTACT, COURT, NAMES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
+import { AI, AUDIO, BALL, CONTACT, COURT, NAMES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
 import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox } from './rules.js';
 import { createAI } from './ai.js';
@@ -236,7 +236,7 @@ export function createGame(options = {}) {
     ball.inPlay = false;
     ball.isServe = false;
     const server = match.server;
-    if (fault(match)) { finishPoint(1 - server, 'doubleFault'); return; }
+    if (fault(match)) { finishPoint(1 - server, 'doubleFault', reason); return; }
     g.state = 'pointOver';
     g.timer = SERVE.faultDelay;
     afterPause = 'serve';
@@ -338,7 +338,8 @@ export function createGame(options = {}) {
   }
 
   // ------------------------------------------------------------ rules
-  function finishPoint(winner, reason) {
+  // serveReason: on a double fault, whether the second serve went 'out' or into the 'net'
+  function finishPoint(winner, reason, serveReason = null) {
     ball.inPlay = false;
     ball.isServe = false;
     const server = match.server;
@@ -347,7 +348,7 @@ export function createGame(options = {}) {
     g.timer = match.over ? RALLY.matchOverDelay : RALLY.pointDelay;
     afterPause = match.over ? 'matchOver' : 'serve';
     events.push({
-      type: 'point', winner, reason, server, hitter: ball.lastHitter, rallyHits: g.rallyHits,
+      type: 'point', winner, reason, serveReason, server, hitter: ball.lastHitter, rallyHits: g.rallyHits,
       game: result.game, set: result.set,
     });
   }
@@ -622,6 +623,19 @@ async function boot() {
     }
   }
 
+  // Players grunt now and then: often on serves, smashes and big forehands, rarely on touch shots.
+  function maybeGrunt(e) {
+    const C = AUDIO.gruntChance;
+    let chance;
+    if (e.kind === 'serve' || e.kind === 'smash') chance = C[e.kind];
+    else if (e.volley) chance = C.volley;
+    else if (e.kind === 'slice' || e.kind === 'lob') chance = C[e.kind];
+    else chance = e.kmh >= 100 ? C.power : C.hit;
+    if (Math.random() >= chance) return;
+    const p = game.players[e.side];
+    audio.play('effort', { side: e.side, power: e.kmh / 140, x: p.x, z: p.z });
+  }
+
   const REASON = { out: 'OUT', net: 'NET', double: 'WINNER', ace: 'ACE', doubleFault: 'DOUBLE FAULT' };
 
   function handleEvents() {
@@ -633,6 +647,7 @@ async function boot() {
             kind: e.volley ? 'volley' : e.kind === 'drive' || e.kind === 'lob' ? 'hit' : e.kind,
             power: e.kmh / 140, x: game.players[e.side].x, z: game.players[e.side].z,
           });
+          maybeGrunt(e);
           break;
         case 'timing':
           hud.showTiming(e.kind, e.smash ? 'SMASH' : e.volley ? 'VOLLEY' : '');
@@ -658,6 +673,7 @@ async function boot() {
           hud.showCall('NET CORD');
           break;
         case 'let':
+          audio.call('Let!');
           hud.showMessage('LET', e.serveNumber === 1 ? 'FIRST SERVE' : 'SECOND SERVE', 1.2);
           break;
         case 'serveReady':
@@ -665,6 +681,7 @@ async function boot() {
           break;
         case 'fault':
           hud.showMessage('FAULT', 'SECOND SERVE', 1.2);
+          if (e.reason === 'out') audio.call('Fault!');
           break;
         case 'point': {
           showScore();
@@ -682,6 +699,8 @@ async function boot() {
             }
           }
           hud.showMessage(REASON[e.reason] || 'POINT', sub, 1.6);
+          if (e.reason === 'out') audio.call('Out!');
+          else if (e.reason === 'doubleFault' && e.serveReason === 'out') audio.call('Fault!');
           if (!e.set) crowdReact(e);
           break;
         }

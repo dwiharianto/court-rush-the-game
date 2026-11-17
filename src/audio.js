@@ -5,7 +5,7 @@
 // stadium bed that settles during points, applause sized to each point, and
 // whistles for the big ones. Everything runs through a stadium reverb.
 import { AUDIO } from './config.js';
-import { applause, ballSound, grit, impulse, makeRng, roomTone, whistles } from './soundgen.js';
+import { applause, ballSound, grit, grunt, impulse, makeRng, roomTone, whistles } from './soundgen.js';
 
 const CROWD_SR = 22050; // crowd buffers are generated at a lower rate; it is all below 5 kHz
 
@@ -13,7 +13,7 @@ export function createAudio(options = {}) {
   let ctx = null;
   let master = null, sfx = null, crowd = null, verbSend = null;
   let noiseBuf = null, gritBuf = null;
-  const bank = { applauseLong: [], applauseShort: [], whistles: [], ball: {} };
+  const bank = { applauseLong: [], applauseShort: [], whistles: [], ball: {}, grunt: [[], []] };
   let murmurGain = null;
   let crowdMode = 'chatter', swellIn = 0;
   let muted = false, paused = false;
@@ -64,6 +64,11 @@ export function createAudio(options = {}) {
       bank.ball[kind] = [];
       for (let i = 0; i < 6; i++) bank.ball[kind].push(buffer(ballSound(sr, kind, br), sr));
     }
+    // each player has their own voice: six effort grunts apiece
+    const gr = makeRng(33);
+    AUDIO.gruntPitch.forEach((f0, side) => {
+      for (let i = 0; i < 6; i++) bank.grunt[side].push(buffer(grunt(sr, f0, gr), sr));
+    });
 
     // the crowd takes a moment to generate; do it in slices so nothing stalls
     const r = makeRng(1234);
@@ -169,6 +174,47 @@ export function createAudio(options = {}) {
     ballHit('bounce', AUDIO.levels.bounce * p, opts);
   }
 
+  // A player's effort grunt on a big shot.
+  function effort(opts) {
+    const list = bank.grunt[opts.side] || bank.grunt[0];
+    if (!list.length) return;
+    const s = ctx.createBufferSource();
+    s.buffer = list[Math.floor(rnd() * list.length)];
+    s.playbackRate.value = 0.96 + rnd() * 0.08;
+    const g = ctx.createGain();
+    g.gain.value = AUDIO.levels.grunt * (0.7 + 0.3 * Math.min(1, opts.power ?? 0.7));
+    s.connect(g).connect(place(opts));
+    s.start(now() + 0.02); // the breath comes out just after the strike
+  }
+
+  // Line calls, spoken by the browser's own speech voice (no audio files).
+  // A British English voice is preferred, like a line judge.
+  const speech = typeof window !== 'undefined' && 'speechSynthesis' in window ? window.speechSynthesis : null;
+  let voice = null;
+  function pickVoice() {
+    if (!speech) return;
+    const vs = speech.getVoices();
+    voice = vs.find((v) => /en-GB/i.test(v.lang) && /male|daniel|arthur|george|ryan/i.test(v.name))
+      || vs.find((v) => /en-GB/i.test(v.lang)) || vs.find((v) => /^en/i.test(v.lang)) || null;
+  }
+  if (speech) {
+    pickVoice();
+    speech.addEventListener?.('voiceschanged', pickVoice);
+  }
+  function call(text) {
+    if (!speech || muted || paused) return;
+    try {
+      speech.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      if (voice) u.voice = voice;
+      u.lang = voice ? voice.lang : 'en-GB';
+      u.rate = 1.05;
+      u.pitch = 0.85;
+      u.volume = Math.min(1, AUDIO.volume * AUDIO.levels.call);
+      speech.speak(u);
+    } catch { /* speech not available here */ }
+  }
+
   // Ball into the net: a dull thump and the mesh rattling.
   function net(opts) {
     const at = now() + 0.005;
@@ -265,7 +311,7 @@ export function createAudio(options = {}) {
     },
   };
 
-  const SFX = { strike, bounce, net, cord, slide };
+  const SFX = { strike, bounce, net, cord, slide, effort };
 
   return {
     // Browsers only allow audio after a user gesture, so this runs on Play.
@@ -278,22 +324,25 @@ export function createAudio(options = {}) {
       }
       if (ctx.state === 'suspended' && !paused && !options.context) ctx.resume();
     },
-    // name: strike | bounce | net | cord | slide; opts: { kind, power, speed, x, z }
+    // name: strike | bounce | net | cord | slide | effort; opts: { kind, power, speed, side, x, z }
     play(name, opts = {}) {
       if (!ctx || (ctx.state !== 'running' && !options.context) || !SFX[name]) return;
       if (name === 'strike') strike(opts.kind, opts);
       else SFX[name](opts);
     },
+    // a spoken line call: 'Out!', 'Fault!', 'Let!'
+    call,
     react(kind, intensity = 0.5) {
       if (!ctx || !REACT[kind]) return;
       REACT[kind](Math.max(0, Math.min(1, intensity)));
     },
     setCrowd,
     update,
-    pause() { paused = true; if (ctx && ctx.suspend) ctx.suspend(); },
+    pause() { paused = true; if (speech) speech.cancel(); if (ctx && ctx.suspend) ctx.suspend(); },
     resume() { paused = false; if (ctx && ctx.resume) ctx.resume(); },
     setMuted(m) {
       muted = m;
+      if (m && speech) speech.cancel();
       if (master) master.gain.setTargetAtTime(m ? 0 : AUDIO.volume, ctx.currentTime, 0.05);
     },
     get muted() { return muted; },
