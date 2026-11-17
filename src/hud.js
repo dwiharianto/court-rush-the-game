@@ -26,6 +26,13 @@ export function createHud(doc = document) {
     });
   }
   playButton.addEventListener('click', () => { if (playHandler) playHandler(level); });
+  const pauseEl = doc.getElementById('pause');
+  const pauseButton = doc.getElementById('pause-btn');
+  const resumeButton = doc.getElementById('resume');
+  let pauseHandler = null, resumeHandler = null, quitHandler = null;
+  pauseButton.addEventListener('click', () => { if (pauseHandler) pauseHandler(); });
+  resumeButton.addEventListener('click', () => { if (resumeHandler) resumeHandler(); });
+  doc.getElementById('quit').addEventListener('click', () => { if (quitHandler) quitHandler(); });
   let messageTimer = 0;
   let timingTimer = 0;
 
@@ -37,6 +44,21 @@ export function createHud(doc = document) {
 
   return {
     onPlay(handler) { playHandler = handler; },
+    onPause(handler) { pauseHandler = handler; },
+    onResume(handler) { resumeHandler = handler; },
+    onQuit(handler) { quitHandler = handler; },
+    showPause(scoreLine) {
+      doc.getElementById('pause-score').textContent = scoreLine;
+      pauseEl.classList.remove('hidden');
+      doc.body.classList.add('paused');
+      pauseButton.blur();
+      resumeButton.focus({ preventScroll: true });
+    },
+    hidePause() {
+      pauseEl.classList.add('hidden');
+      doc.body.classList.remove('paused');
+      if (doc.activeElement && doc.activeElement.blur) doc.activeElement.blur();
+    },
     // result: { headline, detail, button } shown above the Play button after a match
     showMenu(result = null) {
       doc.getElementById('menu-headline').textContent = result ? result.headline : '';

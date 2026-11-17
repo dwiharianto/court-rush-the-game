@@ -20,6 +20,7 @@
       </div>
       <div id="message"><div id="message-main"></div><div id="message-sub"></div></div>
       <div id="timing"></div>
+      <button id="pause-btn" type="button" aria-label="Pause"><span></span><span></span></button>
       <div id="touch">
         <div id="stick"><div id="stick-knob"></div></div>
         <div id="buttons">
@@ -27,6 +28,15 @@
           <button data-action="slice" class="tb tb-slice">SLICE</button>
           <button data-action="drive" class="tb tb-hit">HIT</button>
         </div>
+      </div>
+    </div>
+    <div id="pause" class="hidden">
+      <div class="menu-card">
+        <h2>PAUSED</h2>
+        <div id="pause-score"></div>
+        <button id="resume" type="button">Resume</button>
+        <button id="quit" type="button">Quit match</button>
+        <div class="menu-foot" id="pause-hint">Press P or Esc to resume</div>
       </div>
     </div>
     <div id="menu">

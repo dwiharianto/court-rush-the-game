@@ -460,6 +460,45 @@ async function boot() {
     window.courtRush.game = game;
   });
 
+  // Pause: button, P or Esc, and automatically when the tab or window loses focus.
+  let paused = false;
+  const inMatch = () => game.state !== 'menu' && game.state !== 'matchOver';
+  function pause() {
+    if (paused || !inMatch()) return;
+    paused = true;
+    input.clear();
+    const m = game.match;
+    const labels = pointLabels(m);
+    hud.showPause(`${NAMES.player} ${m.games[0]} : ${m.games[1]} ${NAMES.cpu}   (${labels[0]} : ${labels[1]})`);
+  }
+  function resume() {
+    if (!paused) return;
+    paused = false;
+    input.clear();
+    hud.hidePause();
+  }
+  hud.onPause(pause);
+  hud.onResume(resume);
+  hud.onQuit(() => {
+    paused = false;
+    hud.hidePause();
+    hud.hideMessage();
+    game = createGame();
+    clockRunning = false;
+    matchTime = 0;
+    world.setSpeed(0);
+    showScore();
+    hud.showMenu();
+    window.courtRush.game = game;
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyP' && e.code !== 'Escape') return;
+    e.preventDefault();
+    if (paused) resume(); else pause();
+  });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+  window.addEventListener('blur', pause);
+
   const REASON = { out: 'OUT', net: 'NET', double: 'WINNER', ace: 'ACE', doubleFault: 'DOUBLE FAULT' };
 
   function handleEvents() {
@@ -539,6 +578,11 @@ async function boot() {
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+    if (paused) {
+      renderer.render(world.scene, world.camera);
+      requestAnimationFrame(frame);
+      return;
+    }
     acc += dt;
     const m = input.move();
     frameInput.x = m.x;
