@@ -238,38 +238,45 @@ export function createAudio(options = {}) {
     for (let i = 0; i < 3; i++) burst(at + 0.015 + i * 0.022, { f: 1900 + rnd() * 500, q: 3, amp: 0.15 * k * (1 - i * 0.25), tau: 0.008, dest });
   }
 
-  // A shoe squeaking on a hard court: rubber stick-slip, a buzzy tone that bends.
+  // A shoe squeaking on a hard court: a short, high, nearly pure "eek" that bends
+  // upward, with a fast fine chatter from the rubber gripping and slipping. Nothing
+  // low or slow: a low, slowly rattling tone is what makes a squeak sound rude.
   function squeak(opts, level = 1) {
     const at = now() + 0.005;
     const dest = place(opts);
-    const chirps = rnd() < 0.35 ? 2 : 1;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 1500; hp.Q.value = 0.7;
+    hp.connect(dest);
+    const chirps = rnd() < 0.3 ? 2 : 1;
     let t = at;
     for (let c = 0; c < chirps; c++) {
-      const f = 1050 + rnd() * 700, dur = 0.07 + rnd() * 0.14;
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.setValueAtTime(f * 0.92, t);
-      o.frequency.linearRampToValueAtTime(f * (1.05 + rnd() * 0.1), t + dur * 0.4);
-      o.frequency.linearRampToValueAtTime(f * (0.85 + rnd() * 0.1), t + dur);
-      const wob = ctx.createOscillator(); // the stutter of rubber gripping and slipping
-      wob.frequency.value = 28 + rnd() * 20;
-      const wobGain = ctx.createGain();
-      wobGain.gain.value = f * 0.04;
-      wob.connect(wobGain).connect(o.frequency);
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass'; bp.frequency.value = f * 2; bp.Q.value = 2.5;
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass'; hp.frequency.value = 700;
+      const f = 2300 + rnd() * 1300, dur = 0.05 + rnd() * 0.09;
+      const rise = rnd() < 0.75; // most squeaks rise; some fall
       const g = ctx.createGain();
-      const peak = AUDIO.levels.squeak * level * (0.7 + 0.3 * rnd());
+      const peak = AUDIO.levels.squeak * level * (0.7 + 0.3 * rnd()) * (c ? 0.6 : 1);
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(peak, t + 0.012);
-      g.gain.setValueAtTime(peak * 0.8, t + dur * 0.7);
+      g.gain.linearRampToValueAtTime(peak, t + 0.006);
+      g.gain.setValueAtTime(peak * 0.85, t + dur - 0.02);
       g.gain.linearRampToValueAtTime(0, t + dur);
-      o.connect(bp).connect(hp).connect(g).connect(dest);
-      o.start(t); wob.start(t);
-      o.stop(t + dur + 0.02); wob.stop(t + dur + 0.02);
-      t += dur + 0.03 + rnd() * 0.05;
+      g.connect(hp);
+      const chatter = ctx.createOscillator(); // rubber stick-slip: fast and shallow
+      chatter.frequency.value = 170 + rnd() * 110;
+      const depth = ctx.createGain();
+      depth.gain.value = f * 0.015;
+      chatter.connect(depth);
+      for (const [mult, amp] of [[1, 1], [2, 0.18]]) {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(f * mult * (rise ? 0.9 : 1.08), t);
+        o.frequency.linearRampToValueAtTime(f * mult * (rise ? 1.08 : 0.92), t + dur);
+        depth.connect(o.frequency);
+        const og = ctx.createGain();
+        og.gain.value = amp;
+        o.connect(og).connect(g);
+        o.start(t); o.stop(t + dur + 0.02);
+      }
+      chatter.start(t); chatter.stop(t + dur + 0.02);
+      t += dur + 0.025 + rnd() * 0.04;
     }
   }
 

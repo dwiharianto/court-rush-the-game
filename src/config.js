@@ -153,7 +153,7 @@ export const AUDIO = {
     chatter: 0.22, hush: 0.05, // stadium bed between points and during play
     applause: 0.82, whistle: 0.2,
     grunt: 0.5, call: 1.6, // line-call volume relative to the master volume
-    squeak: 0.5,
+    squeak: 0.32,
   },
 };
 
