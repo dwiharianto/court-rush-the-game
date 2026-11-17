@@ -554,6 +554,7 @@ export function createCharacter(options = {}) {
   let held = null;
   let lastFwd = 0, lastSide = 0, accFwd = 0, accSide = 0;
   let wasSliding = false, slideSide = 1, slideLateral = 1;
+  let turnedRun = false; // turned around to chase a ball going over or past
   let splitT = 99;
 
   function update(dt, s) {
@@ -585,13 +586,27 @@ export function createCharacter(options = {}) {
     wasSliding = sliding;
     slideBlend = smooth(slideBlend, sliding ? 1 : 0, sliding ? 16 : 6, dt);
 
-    // body turn toward the movement direction; straight back is a backpedal
+    // Body turn toward the movement direction. A short, slow retreat is a backpedal
+    // facing the net; a real chase backwards turns around and runs, over the
+    // shoulder on the side the ball is going, and turns back to face the net to hit.
     let yawTarget = 0, dir = 1;
+    const backwards = fwd < 0 && Math.abs(side) < ANIM.backpedalRatio * -fwd;
+    if (acting || speed < ANIM.turnedRunEnd) turnedRun = false;
+    else if (backwards && speed > ANIM.backpedalMaxSpeed) turnedRun = true;
     if (speed > 0.4 && !acting && !sliding && wantShuffle === 0) {
-      if (fwd < 0 && Math.abs(side) < ANIM.backpedalRatio * -fwd) dir = -1;
-      else yawTarget = clamp(Math.atan2(side, fwd), -ANIM.maxTurn, ANIM.maxTurn);
+      if (backwards && !turnedRun) dir = -1;
+      else {
+        yawTarget = Math.atan2(side, fwd);
+        // stay on the side of the turn already taken instead of spinning through the front
+        if (yawTarget - yaw > Math.PI) yawTarget -= 2 * Math.PI;
+        else if (yaw - yawTarget > Math.PI) yawTarget += 2 * Math.PI;
+      }
     }
-    yaw = smooth(yaw, yawTarget, sliding ? ANIM.turnRate * 1.6 : ANIM.turnRate, dt);
+    const rate = acting ? ANIM.turnRate * 1.9 : sliding ? ANIM.turnRate * 1.6 : ANIM.turnRate;
+    yaw = smooth(yaw, yawTarget, rate, dt);
+    if (yaw > 2 * Math.PI) yaw -= 2 * Math.PI;
+    else if (yaw < -2 * Math.PI) yaw += 2 * Math.PI;
+    const look = clamp(yaw, -1.75, 1.75); // how far the head and shoulders can follow
     runBlend = smooth(runBlend, clamp(speed / ANIM.runBlendSpeed, 0, 1) * (1 - shuffleBlend), ANIM.runBlendRate, dt);
 
     // stride grows with speed, so cadence stays lively at low speed
@@ -633,11 +648,12 @@ export function createCharacter(options = {}) {
     run.rKnee = 0.35 + kneeAmp * Math.pow(Math.max(0, kr), 1.2);
     run.lHipZ = 0.05; run.rHipZ = 0.05;
     run.hipsYaw = -0.2 * sn * k;
-    run.torsoY = 0.32 * sn * k - yaw * 0.15;
+    run.torsoY = 0.32 * sn * k - look * 0.15;
     // lean forward with speed and acceleration, back when braking, into the turn sideways
     run.torsoX = 0.2 + 0.18 * k + clamp(accFwd * 0.03, -0.3, 0.2);
     run.torsoZ = clamp(-accSide * 0.025, -0.25, 0.25);
-    run.headY = -run.hipsYaw - run.torsoY - yaw * 0.5; run.headX = -0.18 - 0.1 * k;
+    // running away from the net, the head turns to keep an eye on the ball
+    run.headY = clamp(-run.hipsYaw - run.torsoY - look * 0.5, -1.1, 1.1); run.headX = -0.18 - 0.1 * k;
     run.lShX = 0.2 - armAmp * sn; run.lShZ = 0.14; run.lElbow = 1.35 - 0.3 * sn;
     run.rShX = 0.35 + armAmp * 0.65 * sn; run.rShZ = 0.2; run.rElbow = 1.25 + 0.2 * sn;
     run.lift = (0.015 + 0.04 * k) * Math.abs(sn);

@@ -147,8 +147,9 @@ export const ANIM = {
   runBlendSpeed: 2.4, // speed at which the run pose is fully blended in
   runBlendRate: 9,
   turnRate: 10,
-  maxTurn: 1.75,
-  backpedalRatio: 0.4,
+  backpedalRatio: 0.4, // mostly straight back counts as moving backwards
+  backpedalMaxSpeed: 2.8, // faster than this backwards, the player turns and runs
+  turnedRunEnd: 1.6, // a turned run lasts until the player slows below this
   idleHz: 1.5,
 };
 
