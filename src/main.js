@@ -114,9 +114,9 @@ export function createGame(options = {}) {
   }
 
   function holdBall(p) {
-    ball.x = p.x - p.right * 0.22;
+    ball.x = p.x + p.right * SERVE.handSide;
     ball.y = SERVE.handY;
-    ball.z = p.z - p.sign * 0.28;
+    ball.z = p.z - p.sign * SERVE.handFront;
     ball.vx = ball.vy = ball.vz = 0;
   }
 
@@ -155,6 +155,17 @@ export function createGame(options = {}) {
     g.timer = 0;
     cpuServeError = gauss() * level.serveError;
     events.push({ type: 'toss', server: match.server });
+  }
+
+  // After contact the server lands on the front foot inside the court and carries on a step.
+  function serveFollow(p, dt) {
+    p.vx = 0;
+    p.vz = 0;
+    if (!p.swing || !p.swing.done) return;
+    const u = (p.actionT - SERVE_ANIM.contact) / SERVE_ANIM.landTime;
+    if (u >= 1) return;
+    p.vz = -p.sign * SERVE_ANIM.landSpeed * (1 - u);
+    p.z += p.vz * dt;
   }
 
   function startServeSwing(kind) {
@@ -408,7 +419,7 @@ export function createGame(options = {}) {
       if (press && human.action === 'toss') startServeSwing(press);
       return;
     }
-    if (human.action === 'serve') { human.vx = human.vz = 0; return; }
+    if (human.action === 'serve') { serveFollow(human, dt); return; }
     if (g.state === 'rally' && human.action === 'ready' && press) startSwing(human, press);
     if (g.state === 'menu' || g.state === 'matchOver') { drive(human, 0, 0, 0, dt); return; }
     drive(human, input.x, -input.y, topSpeed(human), dt);
@@ -428,7 +439,7 @@ export function createGame(options = {}) {
       }
       return;
     }
-    if (cpu.action === 'serve') { cpu.vx = cpu.vz = 0; return; }
+    if (cpu.action === 'serve') { serveFollow(cpu, dt); return; }
     const d = ai.think(g, cpuBounceGood);
     if (d.swing && cpu.action === 'ready') startSwing(cpu, d.swing.kind, d.swing);
     const dx = d.x - cpu.x, dz = d.z - cpu.z;

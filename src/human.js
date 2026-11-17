@@ -447,35 +447,47 @@ const BH_VOLLEY = [
   key(S, {}),
 ];
 
+// Serve: a side-on stance. The pelvis turns about 70 degrees away from the net
+// (hipsYaw), so with the feet apart the front foot points toward the net post and
+// the back foot sits behind, roughly parallel to the baseline. The head turns back
+// to the court.
 const SERVE_STANCE = makePose({
-  lHip: 0.15, rHip: 0.15, lKnee: 0.25, rKnee: 0.25, lHipZ: 0.14, rHipZ: 0.14,
-  torsoX: 0.1, torsoY: -0.35, headY: 0.3,
-  rShX: 0.35, rShZ: 0.2, rElbow: 1.0, rWristX: -0.3,
-  lShX: 0.6, lShZ: 0.1, lElbow: 0.9,
+  hipsYaw: -1.15, torsoY: 0.15, torsoX: 0.1, headY: 0.95,
+  lHip: 0.12, rHip: -0.05, lHipZ: 0.3, rHipZ: 0.32, lKnee: 0.2, rKnee: 0.22,
+  lShX: 0.65, lShZ: 0.1, lElbow: 0.75, // ball held out in front of the front hip
+  rShX: 0.55, rShY: 0.45, rShZ: 0.1, rElbow: 0.9, rWristX: -0.7, // racket pointing ahead
 });
+// Trophy: tossing arm straight up, racket arm cocked, knees bent, back arched.
 const TROPHY = makePose({
-  lHip: 0.35, rHip: 0.35, lKnee: 0.7, rKnee: 0.7, lHipZ: 0.16, rHipZ: 0.16,
-  torsoX: -0.12, torsoY: -0.6, headX: -0.45, headY: 0.4,
-  rShX: 0, rShZ: 1.55, rShY: -0.25, rElbow: 1.95, rWristX: -0.2,
-  lShX: 2.95, lShZ: 0.1, lElbow: 0.05,
+  hipsYaw: -1.3, torsoY: -0.2, torsoX: -0.15, torsoZ: 0.25, headX: -0.5, headY: 0.6,
+  lHip: 0.45, rHip: 0.25, lHipZ: 0.3, rHipZ: 0.32, lKnee: 0.85, rKnee: 0.8,
+  lShX: 2.9, lShZ: 0.25, lElbow: 0.05,
+  // with the upper arm out to the side, rShX turns it about its own axis: here the
+  // forearm stands up and the racket points to the sky behind the head
+  rShX: 1.5, rShZ: 1.6, rShY: -0.5, rElbow: 1.9, rWristX: 0.7,
 });
 const T = SERVE_ANIM.tossDuration, SC = SERVE_ANIM.contact;
 const TOSS = [
   { t: 0, pose: SERVE_STANCE },
-  key(T * 0.5, { lShX: 2.2, lElbow: 0.1, rShX: 0.1, rShZ: 0.9, rShY: -0.6, rElbow: 0.7,
-    lHip: 0.25, rHip: 0.25, lKnee: 0.5, rKnee: 0.5 }, SERVE_STANCE),
+  // arms part together: the ball goes up, the racket swings down and back
+  key(T * 0.5, { lShX: 1.8, lShZ: 0.15, lElbow: 0.1,
+    rShX: -0.3, rShZ: 0.7, rShY: -0.2, rElbow: 0.45, rWristX: -0.2,
+    lHip: 0.3, rHip: 0.12, lKnee: 0.45, rKnee: 0.45, hipsYaw: -1.25, torsoY: -0.05, headX: -0.25, headY: 0.8 }, SERVE_STANCE),
   { t: T, pose: TROPHY },
 ];
 const SERVE = [
   { t: 0, pose: TROPHY },
-  key(SC * 0.55, { rShZ: 1.95, rElbow: 2.35, torsoY: -0.3, torsoX: -0.05, lShX: 1.6, lElbow: 0.6,
-    lHip: 0.2, rHip: 0.2, lKnee: 0.4, rKnee: 0.4 }, TROPHY),
-  key(SC, { lHip: 0.02, rHip: 0.02, lKnee: 0.05, rKnee: 0.05, lHipZ: 0.1, rHipZ: 0.1, lift: 0.12,
-    torsoX: 0.12, torsoY: 0.25, headX: -0.4, headY: 0,
-    rShX: 0, rShZ: 2.85, rShY: 0.4, rElbow: 0.05, rWristX: 0.15,
-    lShX: 0.5, lShZ: 0.1, lElbow: 1.4 }, TROPHY),
-  key(SC + 0.13, { lHip: 0.5, rHip: 0.1, lKnee: 0.6, rKnee: 0.3, lHipZ: 0.15, rHipZ: 0.15,
-    torsoX: 0.6, torsoY: 0.8, headX: -0.3, headY: -0.3,
+  // racket drop behind the back as the legs start to drive
+  key(SC * 0.55, { rShX: -1.5, rShZ: 1.9, rElbow: 2.4, rShY: -0.3, torsoY: -0.1, hipsYaw: -1.0, torsoZ: 0.15,
+    lShX: 1.8, lElbow: 0.8, lHip: 0.25, rHip: 0.15, lKnee: 0.4, rKnee: 0.4 }, TROPHY),
+  // contact: airborne, arm fully extended overhead, hips and chest uncoiled toward the net
+  key(SC, { hipsYaw: -0.35, torsoY: 0.9, torsoX: 0.3, torsoZ: -0.2, headX: -0.5, headY: 0.2,
+    lHip: 0.05, rHip: 0.02, lHipZ: 0.1, rHipZ: 0.1, lKnee: 0.06, rKnee: 0.1, lift: 0.26,
+    rShX: 0.2, rShZ: 3.1, rShY: 0.3, rElbow: 0.05, rWristX: 0.2,
+    lShX: 0.5, lShZ: 0.1, lElbow: 1.5 }, TROPHY),
+  // follow-through: land on the front foot inside the court, back leg kicking up behind
+  key(SC + 0.13, { hipsYaw: 0.3, torsoY: 0.5, torsoX: 0.6, torsoZ: 0, headX: -0.2, headY: -0.2,
+    lHip: 0.5, lKnee: 0.6, lHipZ: 0.12, rHip: -0.7, rKnee: 1.2, rHipZ: 0.1, lift: 0,
     rShX: 0.7, rShZ: 0.5, rShY: 1.9, rElbow: 0.4, rWristX: 0.3,
     lShX: 0.3, lShZ: 0.2, lElbow: 1.4 }, TROPHY),
   key(SERVE_ANIM.swingDuration, {}),

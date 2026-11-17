@@ -138,6 +138,8 @@ export const SERVE_ANIM = {
   tossDuration: 0.7, // time for the body to reach the trophy pose
   swingDuration: 0.5,
   contact: 0.18,
+  landSpeed: 2.4, // the server's forward carry after contact, m/s, easing to a stop
+  landTime: 0.3,
 };
 
 export const ANIM = {
@@ -293,7 +295,9 @@ export const SERVE = {
   receiverBehind: 0.9,
   readyDelay: 0.5, // before the human can toss
   cpuDelay: 1.3, // before the CPU tosses
-  handY: 1.15, // ball held in the left hand
+  handY: 1.13, // ball held in the left hand, out in front of the front hip
+  handSide: 0.27, // toward the hitting side (the stance is side-on)
+  handFront: 0.48, // toward the net
   tossY0: 1.45, // release height
   tossApex: 3.0, // top of the toss
   tossFront: 0.35, // toss position in front of the server
