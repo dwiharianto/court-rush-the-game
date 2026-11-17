@@ -1,5 +1,6 @@
 // HTML overlay: scoreboard, centre message, timing label.
 import { NAMES } from './config.js';
+import { PALETTE, HAIR_STYLES, HEADWEAR, cleanName } from './profile.js';
 
 export function createHud(doc = document) {
   const rows = [...doc.querySelectorAll('.sb-row')];
@@ -46,17 +47,96 @@ export function createHud(doc = document) {
   const soundButton = doc.getElementById('sound');
   let soundHandler = null;
   soundButton.addEventListener('click', () => { if (soundHandler) soundHandler(); });
+  // ---- player customisation panel
+  const custom = doc.getElementById('custom');
+  const nameInput = doc.getElementById('custom-name');
+  const rowsEl = doc.getElementById('custom-rows');
+  let profile = null, customHandler = null, customOpenHandler = null, randomHandler = null;
+  const hex = (c) => '#' + c.toString(16).padStart(6, '0');
+  const ROWS = [
+    ['shirt', 'Shirt', PALETTE.shirt], ['shorts', 'Shorts', PALETTE.shorts], ['shoes', 'Shoes', PALETTE.shoes],
+    ['headwear', 'Headwear', HEADWEAR], ['skin', 'Skin tone', PALETTE.skin], ['hair', 'Hair colour', PALETTE.hair],
+    ['hairStyle', 'Hair', HAIR_STYLES],
+  ];
+  const rowButtons = {};
+  for (const [key, label, opts] of ROWS) {
+    const row = doc.createElement('div');
+    row.className = 'custom-row';
+    row.innerHTML = `<span>${label}</span><div class="custom-opts" role="group" aria-label="${label}"></div>`;
+    const box = row.querySelector('.custom-opts');
+    rowButtons[key] = opts.map((opt, i) => {
+      const b = doc.createElement('button');
+      b.type = 'button';
+      if (typeof opt === 'number') {
+        b.className = 'swatch';
+        b.style.background = hex(opt);
+        b.setAttribute('aria-label', `${label} ${i + 1}`);
+        b.dataset.value = String(opt);
+      } else {
+        b.className = 'pill';
+        b.textContent = opt[1];
+        b.dataset.value = opt[0];
+      }
+      b.addEventListener('click', () => {
+        profile[key] = typeof opt === 'number' ? opt : opt[0];
+        syncCustom();
+        if (customHandler) customHandler({ ...profile });
+      });
+      box.appendChild(b);
+      return b;
+    });
+    rowsEl.appendChild(row);
+  }
+  function syncCustom() {
+    nameInput.value = profile.name;
+    for (const [key, buttons] of Object.entries(rowButtons)) {
+      for (const b of buttons) {
+        const on = b.dataset.value === String(profile[key]);
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', String(on));
+      }
+    }
+  }
+  nameInput.addEventListener('input', () => {
+    profile.name = cleanName(nameInput.value);
+    if (customHandler) customHandler({ ...profile });
+  });
+  nameInput.addEventListener('blur', () => { nameInput.value = profile.name; });
+  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameInput.blur(); });
+  const closeCustom = () => {
+    custom.classList.add('hidden');
+    doc.body.classList.remove('customising');
+    if (customOpenHandler) customOpenHandler(false);
+    doc.getElementById('customise').focus({ preventScroll: true });
+  };
+  doc.getElementById('customise').addEventListener('click', () => {
+    syncCustom();
+    custom.classList.remove('hidden');
+    doc.body.classList.add('customising');
+    if (customOpenHandler) customOpenHandler(true);
+  });
+  doc.getElementById('custom-done').addEventListener('click', closeCustom);
+  doc.getElementById('custom-random').addEventListener('click', () => { if (randomHandler) randomHandler(); });
+  custom.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeCustom(); } });
+
   let messageTimer = 0;
   let timingTimer = 0;
 
   doc.getElementById('sb-tour').textContent = `${NAMES.tour} | ${NAMES.round}`;
-  els[0].name.textContent = NAMES.player;
-  els[1].name.textContent = NAMES.cpu;
   doc.body.classList.add('in-menu');
   doc.getElementById('menu-result').style.display = 'none';
 
   return {
     onPlay(handler) { playHandler = handler; },
+    // customisation: handler(profile) on every change; open(bool) when the panel opens or closes
+    onCustomChange(handler) { customHandler = handler; },
+    onCustomOpen(handler) { customOpenHandler = handler; },
+    onRandomise(handler) { randomHandler = handler; },
+    setProfile(p) { profile = { ...p }; syncCustom(); },
+    setNames(player, cpu) {
+      els[0].name.textContent = player;
+      els[1].name.textContent = cpu;
+    },
     onSurface(handler) { surfaceHandler = handler; },
     setSurface(name) { if (surfaceButtons.some((b) => b.dataset.surface === name)) pickSurface(name); },
     onPause(handler) { pauseHandler = handler; },

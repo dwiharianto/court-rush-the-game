@@ -40,6 +40,19 @@
         <div class="menu-foot" id="pause-hint">P or Esc resumes, M turns sound on or off</div>
       </div>
     </div>
+    <div id="custom" class="hidden" role="dialog" aria-label="Customise your player">
+      <div class="custom-card">
+        <h2>Your player</h2>
+        <label class="custom-name" for="custom-name">Name
+          <input id="custom-name" maxlength="14" autocomplete="off" spellcheck="false">
+        </label>
+        <div id="custom-rows"></div>
+        <div class="custom-actions">
+          <button id="custom-random" type="button">Randomise</button>
+          <button id="custom-done" type="button">Done</button>
+        </div>
+      </div>
+    </div>
     <div id="menu">
       <div class="menu-card">
         <div class="menu-tour" id="menu-tour"></div>
@@ -70,6 +83,7 @@
           <button data-level="normal" class="on">Normal</button>
           <button data-level="hard">Hard</button>
         </div>
+        <button id="customise" type="button">Customise player</button>
         <button id="play">Play</button>
         <div class="menu-foot">First to 6 games, win by 2</div>
       </div>

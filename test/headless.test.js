@@ -8,6 +8,7 @@ import { BALL, COURT, SWING, SURFACES, netHeightAt } from '../src/config.js';
 import { createBall, stepBall, planShot, predictAtPlane, copyBall, lowerOverNet } from '../src/ball.js';
 import { createMatch, awardPoint, fault, pointLabels, serveFromRight, inSingles, inServiceBox } from '../src/rules.js';
 import { createBot, playPoints, seededRng } from './bot.js';
+import { cleanName, sanitize, cpuOpponent, randomProfile, CPU_NAMES, PALETTE, DEFAULT_PROFILE } from '../src/profile.js';
 
 // ---------------------------------------------------------------- an independent scorer
 // Written separately from rules.js so the game is checked against a second implementation.
@@ -360,6 +361,30 @@ test('a game on each surface uses that surface; slides are shortest on hard cour
   };
   const clay = slide('clay'), grass = slide('grass'), hard = slide('hard');
   assert.ok(clay > grass && grass > hard && hard > 0, `slide length clay ${clay.toFixed(2)} > grass ${grass.toFixed(2)} > hard ${hard.toFixed(2)}`);
+});
+
+// ---------------------------------------------------------------- player profile
+test('player names are cleaned and profiles reject unknown values', () => {
+  assert.equal(cleanName('  ace   maker!!  '), 'ACE MAKER');
+  assert.equal(cleanName('<b>x</b>'), 'BXB');
+  assert.equal(cleanName(''), DEFAULT_PROFILE.name);
+  assert.equal(cleanName('A'.repeat(40)).length, 14);
+  const p = sanitize({ name: 'k. day', shirt: 0x123456, hairStyle: 'mohawk', headwear: 'cap', skin: PALETTE.skin[0] });
+  assert.equal(p.name, 'K. DAY');
+  assert.equal(p.shirt, DEFAULT_PROFILE.shirt, 'a colour not on the palette falls back');
+  assert.equal(p.hairStyle, DEFAULT_PROFILE.hairStyle);
+  assert.equal(p.headwear, 'cap');
+  assert.equal(p.skin, PALETTE.skin[0]);
+});
+
+test('the CPU opponent has an invented name and never wears the player\'s shirt colour', () => {
+  const rng = seededRng(12);
+  for (let i = 0; i < 200; i++) {
+    const me = randomProfile(rng);
+    const cpu = cpuOpponent(me, rng);
+    assert.ok(CPU_NAMES.includes(cpu.name), `${cpu.name} comes from the invented list`);
+    assert.notEqual(cpu.shirt, me.shirt);
+  }
 });
 
 // ---------------------------------------------------------------- split step

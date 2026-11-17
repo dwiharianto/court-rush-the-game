@@ -153,11 +153,61 @@ const DEFAULTS = {
   socks: 0xffffff,
   trousers: false, // colour the whole leg with the shorts colour
   longSleeves: false,
+  hairStyle: 'short', // 'short' | 'buzz' | 'long' | 'curly' | 'none'
+  headwear: 'none', // 'none' | 'cap' | 'headband'
+  headwearColor: 0xffffff,
   racket: false,
   racketColor: 0x1d1f24,
   gripColor: 0xf0f0f0,
   scale: 1,
 };
+
+// Hair and headwear on a head group whose skull centre sits at y = hr + 0.012.
+function buildHair(head, hr, o, mat, ball) {
+  const cap = (radius, thetaLen, scale, tilt, material) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 10, 0, Math.PI * 2, 0, thetaLen), material);
+    m.scale.set(...scale);
+    m.position.set(0, hr + 0.014, -0.004);
+    m.rotation.x = tilt;
+    m.castShadow = true;
+    head.add(m);
+    return m;
+  };
+  const style = o.hairStyle;
+  if (style === 'short') cap(hr * 0.93 + 0.012, Math.PI * 0.5, [0.93, 1.1, 1.03], -0.62, mat.hair);
+  else if (style === 'buzz') cap(hr * 0.93 + 0.004, Math.PI * 0.47, [0.92, 1.08, 1.02], -0.55, mat.hair);
+  else if (style === 'curly') {
+    cap(hr * 0.93 + 0.03, Math.PI * 0.52, [1.0, 1.12, 1.08], -0.5, mat.hair);
+    for (let i = 0; i < 14; i++) { // a bumpy outline of curls
+      const a = (i / 14) * Math.PI * 2;
+      head.add(ball(0.03, mat.hair, Math.cos(a) * 0.085, hr + 0.07 + Math.sin(i * 1.7) * 0.012, Math.sin(a) * 0.08 - 0.01));
+    }
+  } else if (style === 'long') {
+    cap(hr * 0.93 + 0.014, Math.PI * 0.55, [0.95, 1.1, 1.05], -0.7, mat.hair);
+    // ponytail: gathered at the back of the head, hanging down
+    const tail = lathe([[0.012, -0.2], [0.028, -0.14], [0.034, -0.06], [0.026, 0]], mat.hair, 1, 10);
+    tail.position.set(0, hr + 0.04, -0.09);
+    tail.rotation.x = 0.35;
+    head.add(tail);
+  }
+  const hw = new THREE.MeshStandardMaterial({ color: o.headwearColor, roughness: 0.8 });
+  if (o.headwear === 'cap') {
+    const crown = cap(hr * 0.93 + 0.022, Math.PI * 0.46, [0.97, 0.95, 1.06], -0.25, hw);
+    crown.position.y += 0.006;
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.008, 18, 1, false, -Math.PI / 2, Math.PI), hw);
+    brim.scale.set(1, 1, 1.25);
+    brim.position.set(0, hr + 0.06, 0.07);
+    brim.rotation.x = 0.12;
+    brim.castShadow = true;
+    head.add(brim);
+  } else if (o.headwear === 'headband') {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(hr * 0.93 + 0.004, 0.012, 6, 24), hw);
+    band.rotation.x = Math.PI / 2 - 0.25;
+    band.scale.set(0.92, 1.03, 1);
+    band.position.set(0, hr + 0.045, 0.004);
+    head.add(band);
+  }
+}
 
 export function createFigure(options = {}) {
   const o = { ...DEFAULTS, ...options };
@@ -218,12 +268,7 @@ export function createFigure(options = {}) {
     head.add(ball(0.024, mat.skin, s * 0.095, hr + 0.004, -0.005, 0.5, 1.2, 0.9, 8)); // ear
     head.add(ball(0.011, mat.eye, s * 0.037, hr + 0.022, 0.091, 1.3, 0.8, 0.6, 6)); // eye
   }
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(hr * 0.93 + 0.012, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), mat.hair);
-  hair.scale.set(0.93, 1.1, 1.03);
-  hair.position.set(0, hr + 0.014, -0.004);
-  hair.rotation.x = -0.62;
-  hair.castShadow = true;
-  head.add(hair);
+  buildHair(head, hr, o, mat, ball);
 
   // arms
   function buildArm(side) {

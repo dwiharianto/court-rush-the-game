@@ -16,6 +16,10 @@ npm run build    # static build in dist/
 
 Pick Clay, Grass or Hard court on the start screen. Clay is slow with a high bounce and long slides; grass is fast and low, with shorter slides; hard courts sit in between, with short skids and squeaking shoes. Bounces, slides and stops sound different on each.
 
+## Your player
+
+Customise player, on the start screen, opens a panel with a close-up of your player: name, shirt, shorts, shoes, headwear, skin tone, hair colour and hair style. Choices are saved on the device. Each match the CPU gets an invented name (never a real player's) and an outfit that does not clash with yours.
+
 ## Controls
 
 - Move: arrows or WASD. The direction held at contact aims the shot.

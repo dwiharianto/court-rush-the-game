@@ -361,10 +361,7 @@ export const NAMES = {
   tour: 'PORTO VELANO OPEN',
   round: 'FINAL',
   gamesToWin: 6,
-  player: 'L. MARLOW',
-  playerKit: { shirt: 0x2f9e58, shorts: 0x2452a6, skin: 0xd9a37c, hair: 0x2a1d14, shoes: 0xf4f4f4, racketColor: 0x16181c },
-  cpuKit: { shirt: 0xf6f6f2, shorts: 0xf0f0ec, skin: 0xc98f68, hair: 0x1a1512, shoes: 0xffffff, racketColor: 0xb3261e },
-  cpu: 'D. VESPER',
+  // player and CPU names and looks live in profile.js (the CPU's are invented)
   sponsors: [
     { text: 'VOLTIQUE', bg: '#0d3b66', fg: '#ffffff' },
     { text: 'NORDHAVEN AIR', bg: '#f4f1ea', fg: '#12355b' },

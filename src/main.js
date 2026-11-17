@@ -540,9 +540,34 @@ async function boot() {
   const input = createInput();
   const audio = createAudio();
   let game = createGame();
-  const views = [createCharacter(NAMES.playerKit), createCharacter(NAMES.cpuKit)];
+  const { loadProfile, saveProfile, sanitize, kitFor, cpuOpponent, randomProfile } = await import('./profile.js');
+
+  // The player's look and name come from the customisation panel; the CPU gets an
+  // invented name and a non-clashing look for each match.
+  let me = loadProfile();
+  let cpu = cpuOpponent(me);
+  const views = [createCharacter(kitFor(me)), createCharacter(kitFor(cpu, 0xb3261e))];
   world.scene.add(views[0].object3d, views[1].object3d);
-  const shortName = (side) => (side === 0 ? NAMES.player : NAMES.cpu).split(' ').pop();
+  function rebuildView(side, kit) {
+    world.scene.remove(views[side].object3d);
+    views[side].object3d.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    views[side] = createCharacter(kit);
+    world.scene.add(views[side].object3d);
+    window.courtRush && (window.courtRush.views = views);
+  }
+  const nameOf = (side) => (side === 0 ? me.name : cpu.name);
+  const shortName = (side) => nameOf(side).split(' ').pop();
+  hud.setProfile(me);
+  hud.setNames(me.name, cpu.name);
+  function changeMe(p) {
+    me = sanitize(p);
+    saveProfile(me);
+    rebuildView(0, kitFor(me));
+    hud.setNames(me.name, cpu.name);
+  }
+  hud.onCustomChange(changeMe);
+  hud.onRandomise(() => { const p = { ...randomProfile(), name: me.name }; hud.setProfile(p); changeMe(p); });
+  hud.onCustomOpen((open) => world.setShowroom(open));
   let matchTime = 0;
   let clockRunning = false;
 
@@ -567,6 +592,9 @@ async function boot() {
     audio.unlock();
     applySurface(surface);
     game = createGame({ difficulty, surface });
+    cpu = cpuOpponent(me); // a new opponent each match
+    rebuildView(1, kitFor(cpu, 0xb3261e));
+    hud.setNames(me.name, cpu.name);
     game.start();
     matchTime = 0;
     clockRunning = true;
@@ -586,7 +614,7 @@ async function boot() {
     audio.pause();
     const m = game.match;
     const labels = pointLabels(m);
-    hud.showPause(`${NAMES.player} ${m.games[0]} : ${m.games[1]} ${NAMES.cpu}   (${labels[0]} : ${labels[1]})`);
+    hud.showPause(`${me.name} ${m.games[0]} : ${m.games[1]} ${cpu.name}   (${labels[0]} : ${labels[1]})`);
   }
   function resume() {
     if (!paused) return;
@@ -622,6 +650,7 @@ async function boot() {
   setMuted(muted);
   hud.onSound(() => setMuted(!muted));
   window.addEventListener('keydown', (e) => {
+    if (e.target && e.target.tagName === 'INPUT') return; // typing a name
     if (e.code === 'KeyM') { setMuted(!muted); return; }
     if (e.code !== 'KeyP' && e.code !== 'Escape') return;
     e.preventDefault();
@@ -736,7 +765,7 @@ async function boot() {
           hud.hideMessage();
           hud.showMenu({
             headline: won ? 'YOU WIN' : 'YOU LOSE',
-            detail: `${NAMES.player} ${e.games[0]} : ${e.games[1]} ${NAMES.cpu}`,
+            detail: `${me.name} ${e.games[0]} : ${e.games[1]} ${cpu.name}`,
             button: 'Play again',
           });
           if (won) audio.react('ovation');
@@ -809,7 +838,7 @@ async function boot() {
     audio.setCrowd(st === 'serveReady' || st === 'toss' || st === 'rally' ? 'hush' : 'chatter');
     audio.update(dt);
     world.setClock(matchTime);
-    world.updateCamera(dt, game.players[0].x);
+    world.updateCamera(dt, game.players[0].x, game.players[0].z);
     renderer.render(world.scene, world.camera);
     requestAnimationFrame(frame);
   }

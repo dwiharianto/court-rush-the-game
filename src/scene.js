@@ -766,13 +766,37 @@ export function createWorld() {
     }
     camera.fov = Math.min(CAMERA.maxFov, fov);
     camera.aspect = aspect;
+    narrow = width <= 700;
     camera.updateProjectionMatrix();
   }
 
-  function updateCamera(dt, playerX = 0) {
+  // Showroom: while the player customises, the camera eases in and slowly orbits
+  // the near player, framed beside the panel (or above it on a narrow screen).
+  let showroom = false, show = 0, orbit = 0.6, narrow = false;
+  const bcPos = new THREE.Vector3(), bcTarget = new THREE.Vector3();
+  const srPos = new THREE.Vector3(), srTarget = new THREE.Vector3(), side = new THREE.Vector3();
+  function updateCamera(dt, playerX = 0, playerZ = 12.5) {
     pan += (playerX - pan) * Math.min(1, dt * CAMERA.panLerp);
-    camera.position.x = CAMERA.position[0] + pan * CAMERA.panPosition;
-    target.x = CAMERA.target[0] + pan * CAMERA.panTarget;
+    bcPos.set(CAMERA.position[0] + pan * CAMERA.panPosition, CAMERA.position[1], CAMERA.position[2]);
+    bcTarget.set(CAMERA.target[0] + pan * CAMERA.panTarget, CAMERA.target[1], CAMERA.target[2]);
+    show += ((showroom ? 1 : 0) - show) * Math.min(1, dt * 3);
+    if (show < 0.001) {
+      camera.position.copy(bcPos);
+      camera.lookAt(bcTarget);
+      return;
+    }
+    orbit += dt * 0.35;
+    const a = Math.sin(orbit) * 1.1; // sway between the player's front and sides
+    // move the framing so the player sits clear of the panel: beside it on a wide
+    // screen, above it (the panel is a sheet at the bottom) on a narrow one
+    const r = narrow ? 3.8 : 4.4;
+    srPos.set(playerX + Math.sin(a) * r, narrow ? 1.3 : 1.55, playerZ - Math.cos(a) * r);
+    srTarget.set(playerX, narrow ? -0.4 : 1.0, playerZ);
+    side.subVectors(srTarget, srPos).cross(camera.up).normalize();
+    if (!narrow) srTarget.addScaledVector(side, -0.6);
+    const u = show * show * (3 - 2 * show);
+    camera.position.lerpVectors(bcPos, srPos, u);
+    target.lerpVectors(bcTarget, srTarget, u);
     camera.lookAt(target);
   }
 
@@ -783,6 +807,7 @@ export function createWorld() {
     addSlideTrail: (...a) => { if (marks) slideFx.addTrail(...a); },
     slideDust: (...a) => { if (marks) slideFx.puff(...a); },
     updateFx: slideFx.update,
+    setShowroom(on) { showroom = on; },
     // switch the court between clay, grass and hard; marks and dust only show on clay
     setSurface(name) {
       court.setSurface(name);
