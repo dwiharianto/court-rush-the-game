@@ -1,7 +1,8 @@
 // Offline sound generators: plain sample arrays, built once when audio starts.
-// Crowd voices are glottal pulse trains through vowel formant filters; applause
-// is many clappers, each a train of short filtered noise bursts; the reverb is
-// a decaying, darkening noise tail. No audio files.
+// The crowd bed is band-limited pink noise with slow swells; applause is many
+// clappers, each a train of short filtered noise bursts; the reverb is a
+// decaying, darkening noise tail. No voices (synthetic voices sound ghostly)
+// and no audio files.
 
 export function makeRng(seed = 1) {
   let s = seed >>> 0 || 1;
@@ -12,13 +13,6 @@ export function makeRng(seed = 1) {
     return s / 4294967296;
   };
 }
-
-// Vowel formants (F1, F2) in Hz.
-const VOWELS = {
-  a: [730, 1090], e: [530, 1840], i: [300, 2250], o: [570, 840],
-  u: [320, 870], ae: [660, 1720], er: [490, 1350],
-};
-const CHAT_VOWELS = ['a', 'e', 'i', 'o', 'u', 'ae', 'er'];
 
 // RBJ band-pass, 0 dB peak. Returns [b0, b2, a1, a2] (b1 is 0).
 function bandpass(f, q, sr) {
@@ -38,46 +32,22 @@ function normalize(chans, peak = 0.9) {
   return chans;
 }
 
-// One voice: a pulse train at pitch(t) through two formants(t), with amplitude amp(t).
-// Parameters are sampled every 64 samples. Writes into out from sample `start`
-// (wrapping when `wrap` is set, for seamless loops).
-function renderVoice(out, sr, start, seconds, { pitch, formants, amp, pan, breath, rnd, wrap = false }) {
-  const n = Math.floor(seconds * sr);
-  const L = out[0].length;
-  const gl = Math.cos((pan + 1) * Math.PI / 4), gr = Math.sin((pan + 1) * Math.PI / 4);
-  let phase = rnd();
-  let c1 = null, c2 = null, f = 100, a = 0;
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0, u1 = 0, u2 = 0;
-  for (let i = 0; i < n; i++) {
-    if ((i & 63) === 0) {
-      const t = i / sr;
-      f = pitch(t);
-      a = amp(t);
-      const [fa, fb] = formants(t);
-      c1 = bandpass(fa, 6, sr);
-      c2 = bandpass(fb, 9, sr);
-    }
-    phase += f / sr;
-    if (phase >= 1) phase -= 1;
-    const src = (1 - breath) * (2 * phase - 1) + breath * (rnd() * 2 - 1);
-    const o1 = c1[0] * src + c1[1] * x2 - c1[2] * y1 - c1[3] * y2;
-    const o2 = c2[0] * src + c2[1] * x2 - c2[2] * u1 - c2[3] * u2;
-    x2 = x1; x1 = src; y2 = y1; y1 = o1; u2 = u1; u1 = o2;
-    const v = (o1 + 0.7 * o2) * a;
-    let j = start + i;
-    if (wrap) j %= L;
-    else if (j >= L) break;
-    out[0][j] += v * gl;
-    out[1][j] += v * gr;
-  }
-}
-
 // Gentle one-pole low-pass over a buffer (distance across the stadium).
 function lowpass(chans, cutoff, sr) {
   const k = 1 - Math.exp((-2 * Math.PI * cutoff) / sr);
   for (const c of chans) {
     let y = 0;
     for (let i = 0; i < c.length; i++) { y += k * (c[i] - y); c[i] = y; }
+  }
+  return chans;
+}
+
+// One-pole high-pass over a buffer.
+function highpass(chans, cutoff, sr) {
+  const k = 1 - Math.exp((-2 * Math.PI * cutoff) / sr);
+  for (const c of chans) {
+    let y = 0;
+    for (let i = 0; i < c.length; i++) { y += k * (c[i] - y); c[i] -= y; }
   }
   return chans;
 }
@@ -95,44 +65,35 @@ function loopFold(chans, len, fade) {
   });
 }
 
-// Crowd chatter: many people talking at once, as a loopable stereo bed.
-export function babble(sr, seconds, voices, rnd) {
-  const len = Math.floor(seconds * sr), fade = Math.floor(0.5 * sr);
-  const out = stereo(len + fade);
-  for (let v = 0; v < voices; v++) {
-    const base = 95 + rnd() * 150; // mixed voices
-    const gain = 0.25 + rnd() * 0.75; // near and far seats
-    const pan = rnd() * 2 - 1;
-    // a chain of phrases, each a run of syllables
-    const syl = [];
-    let t = 0;
-    while (t < seconds + 0.5) {
-      const count = 3 + Math.floor(rnd() * 8);
-      for (let s = 0; s < count; s++) {
-        const d = 0.08 + rnd() * 0.18;
-        syl.push({ t0: t, t1: t + d, vowel: VOWELS[CHAT_VOWELS[Math.floor(rnd() * CHAT_VOWELS.length)]], p: base * (0.9 + rnd() * 0.25) });
-        t += d + 0.02 + rnd() * 0.08;
-      }
-      t += 0.4 + rnd() * 1.6;
+// Stadium room tone: the broad, wordless hum of a full arena (no voices), as a
+// loopable stereo bed. Pink-ish noise, band-limited, with slow swells.
+export function roomTone(sr, seconds, rnd) {
+  const len = Math.floor(seconds * sr), fade = Math.floor(0.6 * sr);
+  const n = len + fade;
+  const out = stereo(n);
+  for (const c of out) {
+    // pink noise (Paul Kellet's economy filter)
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < n; i++) {
+      const w = rnd() * 2 - 1;
+      b0 = 0.99765 * b0 + w * 0.099046;
+      b1 = 0.963 * b1 + w * 0.2965164;
+      b2 = 0.57 * b2 + w * 1.0526913;
+      c[i] = b0 + b1 + b2 + w * 0.1848;
     }
-    let k = 0;
-    const find = (tt) => {
-      while (k < syl.length - 1 && syl[k].t1 < tt) k++;
-      return syl[k];
-    };
-    renderVoice(out, sr, 0, seconds + 0.5, {
-      pitch: (tt) => find(tt).p,
-      formants: (tt) => find(tt).vowel,
-      amp: (tt) => {
-        const s = find(tt);
-        if (tt < s.t0 || tt > s.t1) return 0;
-        const e = Math.min(1, (tt - s.t0) / 0.02, (s.t1 - tt) / 0.04);
-        return e * gain;
-      },
-      pan, breath: 0.25, rnd,
-    });
+    // slow, independent swells on each side
+    let lvl = 1, target = 1, next = 0;
+    for (let i = 0; i < n; i++) {
+      if (i >= next) { target = 0.7 + rnd() * 0.6; next = i + Math.floor((1 + rnd() * 2.5) * sr); }
+      lvl += (target - lvl) * (1 / sr) * 1.2;
+      c[i] *= lvl;
+    }
   }
-  return normalize(loopFold(lowpass(out, 2600, sr), len, fade), 0.9);
+  // band-limit: no rumble, no hiss; a crowd heard across a stadium
+  highpass(out, 160, sr);
+  lowpass(out, 1100, sr);
+  lowpass(out, 1600, sr);
+  return normalize(loopFold(out, len, fade), 0.9);
 }
 
 // Applause: `clappers` people clapping for about `duration` seconds.
@@ -167,63 +128,29 @@ export function applause(sr, duration, clappers, rnd) {
   return normalize(lowpass(out, 5200, sr), 0.9);
 }
 
-// A cheer: shouted "yeah"s rising then falling, with a few whistles.
-export function cheer(sr, seconds, voices, rnd) {
+// Two-finger whistles from the stands, for the big points.
+export function whistles(sr, seconds, count, rnd) {
   const out = stereo(Math.floor(seconds * sr));
-  for (let v = 0; v < voices; v++) {
-    const p0 = 170 + rnd() * 260;
-    const dur = 0.8 + rnd() * 1.5;
-    const start = Math.floor(rnd() * 0.35 * sr);
-    const gain = 0.3 + rnd() * 0.7;
-    const from = VOWELS[rnd() < 0.5 ? 'e' : 'o'], to = VOWELS[rnd() < 0.7 ? 'a' : 'ae'];
-    renderVoice(out, sr, start, dur, {
-      pitch: (t) => p0 * (1 + 0.12 * Math.min(1, t / 0.25) - 0.25 * Math.max(0, (t - dur * 0.6) / (dur * 0.4))) * (1 + 0.015 * Math.sin(t * 31)),
-      formants: (t) => {
-        const u = Math.min(1, t / 0.22);
-        return [from[0] + (to[0] - from[0]) * u, from[1] + (to[1] - from[1]) * u];
-      },
-      amp: (t) => gain * Math.min(1, t / 0.06) * Math.min(1, (dur - t) / 0.45),
-      pan: rnd() * 2 - 1, breath: 0.45, rnd,
-    });
-  }
-  // two-finger whistles
-  for (let w = 0; w < 3; w++) {
-    const f0 = 1900 + rnd() * 800, dur = 0.5 + rnd() * 0.7;
-    const i0 = Math.floor((0.1 + rnd() * 0.5) * sr), n = Math.floor(dur * sr);
+  for (let w = 0; w < count; w++) {
+    const f0 = 1900 + rnd() * 900, dur = 0.35 + rnd() * 0.6;
+    const i0 = Math.floor((0.05 + rnd() * (seconds - dur - 0.1)) * sr), n = Math.floor(dur * sr);
     const pan = rnd() * 2 - 1;
     const gl = Math.cos((pan + 1) * Math.PI / 4), gr = Math.sin((pan + 1) * Math.PI / 4);
+    const gain = 0.5 + rnd() * 0.5;
+    const twoNote = rnd() < 0.4; // the classic rising then falling whistle
     let ph = 0;
     for (let i = 0; i < n && i0 + i < out[0].length; i++) {
       const t = i / sr;
-      const f = f0 * (1 + 0.3 * Math.min(1, t / 0.15)) * (1 + 0.01 * Math.sin(t * 40));
+      let f = f0 * (1 + 0.25 * Math.min(1, t / 0.08));
+      if (twoNote && t > dur * 0.55) f *= 0.8;
+      f *= 1 + 0.006 * Math.sin(t * 38);
       ph += f / sr;
-      const v = Math.sin(2 * Math.PI * ph) * 0.18 * Math.min(1, t / 0.03) * Math.min(1, (dur - t) / 0.1);
+      const v = Math.sin(2 * Math.PI * ph) * gain * Math.min(1, t / 0.02) * Math.min(1, (dur - t) / 0.06);
       out[0][i0 + i] += v * gl;
       out[1][i0 + i] += v * gr;
     }
   }
-  return normalize(lowpass(out, 3800, sr), 0.9);
-}
-
-// A disappointed "ohh" from the crowd: falling pitch, rounded vowel.
-export function groan(sr, seconds, voices, rnd) {
-  const out = stereo(Math.floor(seconds * sr));
-  for (let v = 0; v < voices; v++) {
-    const p0 = 130 + rnd() * 200;
-    const dur = 0.7 + rnd() * (seconds - 0.9);
-    const start = Math.floor(rnd() * 0.15 * sr);
-    const gain = 0.3 + rnd() * 0.7;
-    renderVoice(out, sr, start, dur, {
-      pitch: (t) => p0 * (1.08 - 0.32 * (t / dur)),
-      formants: (t) => {
-        const u = Math.min(1, t / dur);
-        return [VOWELS.o[0] + (VOWELS.u[0] - VOWELS.o[0]) * u, VOWELS.o[1] + (VOWELS.u[1] - VOWELS.o[1]) * u];
-      },
-      amp: (t) => gain * Math.min(1, t / 0.08) * Math.min(1, (dur - t) / (dur * 0.6)),
-      pan: rnd() * 2 - 1, breath: 0.35, rnd,
-    });
-  }
-  return normalize(lowpass(out, 2400, sr), 0.9);
+  return normalize(out, 0.9);
 }
 
 // Stadium reverb impulse: early reflections, then a tail that darkens as it decays.

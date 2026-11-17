@@ -559,19 +559,19 @@ async function boot() {
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
   window.addEventListener('blur', pause);
 
-  // The crowd: applause sized to the point, cheers for your winners, a groan at your errors.
+  // The crowd: applause sized to the point. Clean winners and long rallies get more;
+  // your own errors get only a little, and only after a long rally.
   function crowdReact(e) {
     const rally = Math.min(1, e.rallyHits / 12);
     const clean = e.reason === 'ace' || e.reason === 'double';
     const game = e.game ? 0.15 : 0;
     if (e.winner === 0) {
-      if (clean) audio.react('cheer', 0.45 + 0.4 * rally + game);
-      else audio.react('applause', 0.3 + 0.45 * rally + game);
+      if (clean && (rally > 0.5 || e.game)) audio.react('roar', 0.5 + 0.5 * rally);
+      else audio.react('applause', (clean ? 0.45 : 0.3) + 0.45 * rally + game);
     } else if (clean) {
       audio.react('applause', 0.25 + 0.5 * rally + game);
-    } else {
-      audio.react('groan', 0.4 + 0.5 * rally);
-      if (rally > 0.4 || game) audio.react('applause', 0.2 + 0.4 * rally + game);
+    } else if (rally > 0.4 || game) {
+      audio.react('applause', 0.15 + 0.35 * rally + game);
     }
   }
 
@@ -610,7 +610,6 @@ async function boot() {
           break;
         case 'fault':
           hud.showMessage('FAULT', 'SECOND SERVE', 1.2);
-          audio.react('groan', 0.1); // a murmur at a missed first serve
           break;
         case 'point': {
           showScore();

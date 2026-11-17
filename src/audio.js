@@ -1,11 +1,11 @@
 // Match sound, synthesised with the Web Audio API. No audio files.
 //
 // Ball strikes are modal: a few short decaying resonances, a filtered noise
-// body and a click. The crowd is generated once (soundgen.js): a looping
-// murmur that hushes during points, plus applause, cheers and groans played
-// as reactions. Everything runs through a stadium reverb.
+// body and a click. The crowd is generated once (soundgen.js): a wordless
+// stadium bed that settles during points, applause sized to each point, and
+// whistles for the big ones. Everything runs through a stadium reverb.
 import { AUDIO } from './config.js';
-import { applause, babble, cheer, grit, groan, impulse, makeRng } from './soundgen.js';
+import { applause, grit, impulse, makeRng, roomTone, whistles } from './soundgen.js';
 
 const CROWD_SR = 22050; // crowd buffers are generated at a lower rate; it is all below 5 kHz
 
@@ -13,7 +13,7 @@ export function createAudio(options = {}) {
   let ctx = null;
   let master = null, sfx = null, crowd = null, verbSend = null;
   let noiseBuf = null, gritBuf = null;
-  const bank = { applauseLong: [], applauseShort: [], cheer: [], groan: [] };
+  const bank = { applauseLong: [], applauseShort: [], whistles: [] };
   let murmurGain = null;
   let crowdMode = 'chatter', swellIn = 0;
   let muted = false, paused = false;
@@ -62,15 +62,13 @@ export function createAudio(options = {}) {
     // the crowd takes a moment to generate; do it in slices so nothing stalls
     const r = makeRng(1234);
     const jobs = [
-      () => startMurmur(buffer(babble(CROWD_SR, 9, 26, r), CROWD_SR)),
-      () => bank.applauseShort.push(buffer(applause(CROWD_SR, 2.2, 45, r), CROWD_SR)),
-      () => bank.applauseLong.push(buffer(applause(CROWD_SR, 4.5, 80, r), CROWD_SR)),
-      () => bank.cheer.push(buffer(cheer(CROWD_SR, 3, 32, r), CROWD_SR)),
-      () => bank.groan.push(buffer(groan(CROWD_SR, 1.8, 24, r), CROWD_SR)),
-      () => bank.applauseShort.push(buffer(applause(CROWD_SR, 2.6, 50, r), CROWD_SR)),
-      () => bank.applauseLong.push(buffer(applause(CROWD_SR, 5.5, 90, r), CROWD_SR)),
-      () => bank.cheer.push(buffer(cheer(CROWD_SR, 3.2, 36, r), CROWD_SR)),
-      () => bank.groan.push(buffer(groan(CROWD_SR, 2.0, 26, r), CROWD_SR)),
+      () => startMurmur(buffer(roomTone(CROWD_SR, 12, r), CROWD_SR)),
+      () => bank.applauseShort.push(buffer(applause(CROWD_SR, 2.2, 60, r), CROWD_SR)),
+      () => bank.applauseLong.push(buffer(applause(CROWD_SR, 4.5, 110, r), CROWD_SR)),
+      () => bank.whistles.push(buffer(whistles(CROWD_SR, 2.5, 3, r), CROWD_SR)),
+      () => bank.applauseShort.push(buffer(applause(CROWD_SR, 2.6, 70, r), CROWD_SR)),
+      () => bank.applauseLong.push(buffer(applause(CROWD_SR, 5.5, 120, r), CROWD_SR)),
+      () => bank.whistles.push(buffer(whistles(CROWD_SR, 3, 4, r), CROWD_SR)),
     ];
     if (options.sync) jobs.forEach((j) => j());
     else {
@@ -253,19 +251,17 @@ export function createAudio(options = {}) {
     applause(i) {
       playCrowd(i > 0.55 ? bank.applauseLong : bank.applauseShort, AUDIO.levels.applause * (0.35 + 0.65 * i));
     },
-    cheer(i) {
-      playCrowd(bank.cheer, AUDIO.levels.cheer * (0.4 + 0.6 * i));
-      playCrowd(bank.applauseLong, AUDIO.levels.applause * (0.5 + 0.5 * i), { delay: 0.15 });
-    },
-    groan(i) {
-      playCrowd(bank.groan, AUDIO.levels.groan * (0.4 + 0.6 * i));
+    // a big point: louder, longer applause with whistles from the stands
+    roar(i) {
+      playCrowd(bank.applauseLong, AUDIO.levels.applause * (0.6 + 0.4 * i));
+      playCrowd(bank.whistles, AUDIO.levels.whistle * (0.5 + 0.5 * i), { delay: 0.2 });
     },
     ovation() {
-      playCrowd(bank.cheer, AUDIO.levels.cheer);
       playCrowd(bank.applauseLong, AUDIO.levels.applause);
-      playCrowd(bank.applauseLong, AUDIO.levels.applause * 0.8, { delay: 0.5, rate: 0.93 });
-      playCrowd(bank.cheer, AUDIO.levels.cheer * 0.7, { delay: 1.2, rate: 1.06 });
-      playCrowd(bank.applauseLong, AUDIO.levels.applause * 0.7, { delay: 2.8 });
+      playCrowd(bank.applauseLong, AUDIO.levels.applause * 0.8, { delay: 0.6, rate: 0.93 });
+      playCrowd(bank.whistles, AUDIO.levels.whistle, { delay: 0.3 });
+      playCrowd(bank.whistles, AUDIO.levels.whistle * 0.8, { delay: 1.6, rate: 1.05 });
+      playCrowd(bank.applauseLong, AUDIO.levels.applause * 0.7, { delay: 3 });
     },
   };
 

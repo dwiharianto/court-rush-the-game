@@ -35,7 +35,7 @@ npm run build    # static build in dist/
 | `src/ai.js` | CPU opponent |
 | `src/input.js` | Keyboard and touch |
 | `src/hud.js` | Scoreboard, messages, start screen |
-| `src/audio.js` | Match sound: ball strikes, bounces, net, slides, stadium reverb, crowd murmur and reactions |
-| `src/soundgen.js` | Builds the crowd voices, applause, cheers and reverb as sample buffers at startup |
+| `src/audio.js` | Match sound: ball strikes, bounces, net, slides, stadium reverb, crowd bed and applause |
+| `src/soundgen.js` | Builds the crowd bed, applause, whistles and reverb as sample buffers at startup |
 | `src/main.js` | Headless game core (`createGame`) and the browser loop |
 | `test/` | Scripted player, rules test, difficulty report |

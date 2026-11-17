@@ -119,8 +119,8 @@ export const AUDIO = {
   crowd: 1, // crowd bus
   levels: {
     strike: 1.15, bounce: 0.75, net: 1.2, slide: 0.33, perfect: 0.085,
-    chatter: 0.33, hush: 0.06, // crowd murmur between points and during play
-    applause: 0.82, cheer: 0.41, groan: 0.42,
+    chatter: 0.22, hush: 0.05, // stadium bed between points and during play
+    applause: 0.82, whistle: 0.2,
   },
 };
 
