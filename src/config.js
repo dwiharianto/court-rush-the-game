@@ -111,6 +111,8 @@ export const PLAYER = {
   slideDecel: 12, // m/s^2 while sliding
   slideDecelReverse: 24, // m/s^2 when pushing back the other way mid-slide
   slideEndSpeed: 0.8,
+  splitMaxSpeed: 2.2, // a player moving faster than this is still getting into position: no split step
+  splitSkip: 0.12, // chance a set player skips the split step anyway
 };
 
 export const AUDIO = {
@@ -143,7 +145,7 @@ export const ANIM = {
   strideBase: 1.0, // stride length per cycle at walking pace; grows with speed
   shuffleMax: 3.2, // below this speed a sideways move is a side shuffle facing the net
   shuffleStride: 1.1,
-  splitTime: 0.34, // split step duration when the opponent hits
+  splitTime: 0.34, // split step duration: starts as the opponent swings, lands about as the ball is struck
   runBlendSpeed: 2.4, // speed at which the run pose is fully blended in
   runBlendRate: 9,
   turnRate: 10,

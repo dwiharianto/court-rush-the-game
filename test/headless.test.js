@@ -254,6 +254,25 @@ test('only braking out of a long sprint slides; short runs and reversals stop on
   assert.equal(back.log.some((e) => e.type === 'slide'), false, 'a hard reversal plants and pushes off');
 });
 
+// ---------------------------------------------------------------- split step
+test('players split-step only when set, not on every shot', () => {
+  let splits = 0, swings = 0, bad = 0;
+  playPoints(createGame, {
+    difficulty: 'normal', profile: 'solid', seed: 21, points: 120,
+    onEvent(e, g) {
+      if (e.type === 'hit') swings++;
+      if (e.type !== 'split') return;
+      splits++;
+      const p = g.players[e.side];
+      // checked right after the step that emitted it, so allow for one step of movement
+      if (p.action !== 'ready' || p.slide || Math.hypot(p.vx, p.vz) > 2.2 + 0.6) bad++;
+    },
+  });
+  assert.equal(bad, 0, 'nobody split-steps mid-stroke, mid-slide or at a sprint');
+  assert.ok(splits > swings * 0.3, `split steps still happen often (${splits} for ${swings} shots)`);
+  assert.ok(splits < swings * 0.95, `but not on every shot (${splits} for ${swings} shots)`);
+});
+
 // ---------------------------------------------------------------- long run with invariants
 test('several hundred points of play keep the rules and score consistent', () => {
   let totalFaults = 0;

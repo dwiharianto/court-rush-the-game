@@ -161,6 +161,19 @@ export function createGame(options = {}) {
     serveError = g.timer - TOSS_APEX_T; // negative: early, positive: late
     setAction(p, 'serve');
     p.swing = { kind, hand: 1, plan: null, done: false };
+    considerSplit(players[1 - p.side]);
+  }
+
+  // Split step: as the opponent starts a swing, a player who is set (in the ready
+  // stance, not mid-stroke, sliding or still sprinting into position) hops so they
+  // land as the ball is struck, ready to push off either way. Now and then they skip it.
+  let looks = (options.seed ?? 77) >>> 0 || 77; // its own random stream: cosmetic, keeps play unchanged
+  const lookRng = () => { looks = (Math.imul(looks, 1664525) + 1013904223) >>> 0; return looks / 4294967296; };
+  function considerSplit(p) {
+    if (p.action !== 'ready' || p.slide) return;
+    if (Math.hypot(p.vx, p.vz) > PLAYER.splitMaxSpeed) return;
+    if (lookRng() < PLAYER.splitSkip) return;
+    events.push({ type: 'split', side: p.side });
   }
 
   function launchServe(p) {
@@ -224,6 +237,7 @@ export function createGame(options = {}) {
     else p.action = hand > 0 ? 'forehand' : 'backhand';
     p.actionT = 0;
     p.swing = { kind: smash ? 'smash' : kind, hand, plan, volley, done: false };
+    considerSplit(players[1 - p.side]);
     // swinging at the end of a long chase slides into the shot
     if (!p.slide && !smash && p.chaseT >= PLAYER.slideChaseTime) startSlide(p);
   }
@@ -582,7 +596,6 @@ async function boot() {
       switch (e.type) {
         case 'hit':
           world.setSpeed(e.kmh);
-          views[1 - e.side].splitStep(); // the opponent reacts with a split step
           audio.play('strike', {
             kind: e.volley ? 'volley' : e.kind === 'drive' || e.kind === 'lob' ? 'hit' : e.kind,
             power: e.kmh / 140, x: game.players[e.side].x, z: game.players[e.side].z,
@@ -590,6 +603,9 @@ async function boot() {
           break;
         case 'timing':
           hud.showTiming(e.kind, e.smash ? 'SMASH' : e.volley ? 'VOLLEY' : '');
+          break;
+        case 'split':
+          views[e.side].splitStep();
           break;
         case 'slide':
           audio.play('slide', { speed: e.speed, x: e.x, z: e.z });
