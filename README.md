@@ -19,6 +19,7 @@ npm run build    # static build in dist/
 - Forehand or backhand (two-handed) is picked from which side the ball arrives on.
 - At the net (inside about 8.5 m), a ball that has not bounced is volleyed. Space volleys, K plays a drop volley.
 - Sliding happens only at the end of a real chase: swinging after running flat out slides into the shot, and braking out of a long sprint slides to a stop. Short moves and reversals stop on your feet.
+- Mistimed shots can fly low and clip the tape: a net cord may trickle over or drop back. A serve that clips the net and lands in the box is a let and is replayed.
 - Serve: press once to toss, again near the top of the toss.
 - P or Esc pauses. The game also pauses when the tab loses focus. M turns sound on or off.
 - Touch devices get a stick and HIT, SLICE, LOB buttons.

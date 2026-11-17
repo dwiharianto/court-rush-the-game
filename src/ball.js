@@ -1,6 +1,15 @@
 // Ball state, fixed-step physics, and shot planning. No rendering here.
 import { BALL, COURT, SHOT, netHeightAt } from './config.js';
 
+// A repeatable number in [0, 1) from two values, for outcomes that predictions must reproduce.
+function hash01(a, b) {
+  let h = Math.imul((a + 1) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(Math.round(b * 1000), 0xc2b2ae35);
+  h ^= h >>> 16; h = Math.imul(h, 0x7feb352d);
+  h ^= h >>> 15; h = Math.imul(h, 0x846ca68b);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
 export function createBall() {
   return {
     x: 0, y: 1, z: 0, vx: 0, vy: 0, vz: 0,
@@ -41,15 +50,33 @@ export function stepBall(b, dt, events) {
       const u = pz / (pz - b.z);
       const xn = px + (b.x - px) * u;
       const yn = py + (b.y - py) * u;
-      if (Math.abs(xn) <= COURT.postX && yn < netHeightAt(xn) + r * 0.5) {
-        // caught by the net: it drops on the hitter's side
-        b.x = xn;
-        b.y = Math.max(r, yn);
-        b.z = pz > 0 ? 0.04 : -0.04;
-        b.vx *= 0.1;
-        b.vz = 0;
-        b.vy = Math.min(b.vy, 0) * 0.3;
-        if (events) events.push({ type: 'net', x: xn, y: yn });
+      const top = Math.abs(xn) <= COURT.postX ? netHeightAt(xn) : -1;
+      if (yn < top + r) {
+        // Touching the net. Low balls go into the mesh. Balls that clip the tape lose
+        // most of their pace and pop up: a high clip usually trickles over, a lower
+        // one usually falls back. The outcome is fixed by the ball's own state, so
+        // a prediction of the flight gets the same answer as the real ball.
+        const depth = (top + r - yn) / (r + BALL.cordBelow); // 0 grazing the tape .. 1 full on
+        const roll = hash01(b.hitId, xn);
+        const over = depth < 1 && roll < 1.15 - 1.1 * depth;
+        if (over) {
+          b.x = xn;
+          b.y = Math.max(yn, top + r * 0.4);
+          b.z = pz > 0 ? -0.03 : 0.03;
+          b.vz *= 0.3 + 0.4 * (1 - depth);
+          b.vx = b.vx * 0.6 + (hash01(b.hitId + 7, xn) - 0.5) * 0.8;
+          b.vy = Math.max(0, b.vy) * 0.3 + (0.6 + 2 * depth) * (0.6 + 0.4 * roll);
+          if (events) events.push({ type: 'netCord', x: xn, y: yn, over: true });
+        } else {
+          // caught by the net: it drops on the hitter's side
+          b.x = xn;
+          b.y = Math.max(r, yn);
+          b.z = pz > 0 ? 0.04 : -0.04;
+          b.vx *= 0.1;
+          b.vz = 0;
+          b.vy = Math.min(b.vy, 0) * 0.3;
+          if (events) events.push({ type: 'net', x: xn, y: yn, cord: depth < 1 });
+        }
       }
     }
 
@@ -93,6 +120,22 @@ export function planShot(from, tx, tz, opts = {}) {
     T *= SHOT.flightStretch;
   }
   return { vx: dx / T, vy, vz: dz / T, time: T };
+}
+
+// Re-aim a planned shot so it crosses the net at `clearance` metres above the tape
+// (negative goes into the net), by changing only its launch angle. Only for shots
+// already passing fairly low; returns false and leaves the shot alone otherwise.
+export function lowerOverNet(from, v, clearance) {
+  if ((from.z > 0) === (from.z + v.vz > 0) || v.vz === 0) return false;
+  const tn = -from.z / v.vz;
+  if (tn <= 0.05) return false;
+  const xn = from.x + v.vx * tn;
+  if (Math.abs(xn) > COURT.postX) return false;
+  const yn = from.y + v.vy * tn - 0.5 * BALL.gravity * tn * tn;
+  const now = yn - netHeightAt(xn);
+  if (now > SHOT.netRiskWindow) return false;
+  v.vy += (clearance - now) / tn;
+  return true;
 }
 
 const scratch = createBall();

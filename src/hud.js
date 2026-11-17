@@ -97,6 +97,13 @@ export function createHud(doc = document) {
       clearTimeout(messageTimer);
       message.classList.remove('show');
     },
+    // a short call in the timing spot, such as NET CORD
+    showCall(text) {
+      timing.textContent = text;
+      timing.className = 'show call';
+      clearTimeout(timingTimer);
+      timingTimer = setTimeout(() => timing.classList.remove('show'), 1100);
+    },
     // kind: 'perfect' | 'early' | 'late'
     showTiming(kind, prefix = '') {
       timing.textContent = (prefix ? prefix + ' ' : '') + kind.toUpperCase();

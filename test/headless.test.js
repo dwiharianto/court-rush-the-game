@@ -4,8 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame } from '../src/main.js';
-import { BALL, COURT, SWING } from '../src/config.js';
-import { createBall, stepBall, planShot, predictAtPlane } from '../src/ball.js';
+import { BALL, COURT, SWING, netHeightAt } from '../src/config.js';
+import { createBall, stepBall, planShot, predictAtPlane, copyBall, lowerOverNet } from '../src/ball.js';
 import { createMatch, awardPoint, fault, pointLabels, serveFromRight, inSingles, inServiceBox } from '../src/rules.js';
 import { createBot, playPoints, seededRng } from './bot.js';
 
@@ -252,6 +252,77 @@ test('only braking out of a long sprint slides; short runs and reversals stop on
   assert.equal(stop.p.slide, false, 'the slide ends');
   const back = runThenRelease({ x: -1, y: 0 });
   assert.equal(back.log.some((e) => e.type === 'slide'), false, 'a hard reversal plants and pushes off');
+});
+
+// ---------------------------------------------------------------- net cords
+// A ball from the near baseline crossing the net at `clear` metres above the tape.
+function crossing(clear, x = 0.5, hitId = 1) {
+  const b = createBall();
+  const from = { x, y: 1, z: 10 };
+  const v = planShot(from, x, -9, { speed: 20 });
+  lowerOverNet(from, v, clear);
+  Object.assign(b, from, { vx: v.vx, vy: v.vy, vz: v.vz, hitId });
+  const events = [];
+  for (let i = 0; i < 240 && b.z > -11.9; i++) stepBall(b, BALL.fixedDt, events);
+  return { b, events };
+}
+
+test('balls clipping the tape sometimes trickle over, low ones go into the net', () => {
+  assert.equal(crossing(0.2).events.some((e) => e.type === 'net' || e.type === 'netCord'), false, 'clear of the tape');
+  const low = crossing(-0.15).events.find((e) => e.type === 'net');
+  assert.ok(low && !low.cord, 'well below the tape is the mesh');
+  let over = 0, back = 0;
+  for (let id = 0; id < 60; id++) {
+    const { events, b } = crossing(0.005 - (id % 5) * 0.006, (id % 7) - 3, id);
+    if (events.some((e) => e.type === 'netCord')) {
+      over++;
+      assert.ok(events.some((e) => e.type === 'bounce' && e.z < 0), 'a cord that goes over lands on the far side');
+      assert.ok(Math.abs(b.vz) < 20, 'and has lost pace');
+    } else if (events.some((e) => e.type === 'net' && e.cord)) back++;
+  }
+  assert.ok(over > 10 && back > 5, `both outcomes happen (${over} over, ${back} back)`);
+});
+
+test('a prediction of a net cord matches what the real ball does', () => {
+  for (let id = 0; id < 30; id++) {
+    const a = createBall();
+    const from = { x: 0.3 * id - 4, y: 1, z: 10 };
+    const v = planShot(from, from.x, -9, { speed: 20 });
+    lowerOverNet(from, v, 0.01 - (id % 4) * 0.008);
+    Object.assign(a, from, { vx: v.vx, vy: v.vy, vz: v.vz, hitId: id });
+    const sim = copyBall(createBall(), a);
+    const ea = [], es = [];
+    for (let i = 0; i < 200; i++) { stepBall(a, BALL.fixedDt, ea); stepBall(sim, BALL.fixedDt, es); }
+    assert.deepEqual(es.map((e) => e.type), ea.map((e) => e.type));
+  }
+});
+
+test('a serve that clips the net and lands in the box is a let, replayed with no fault', () => {
+  let found = null;
+  for (let id = 0; id < 80 && !found; id++) {
+    const g = createGame({ rng: seededRng(2), firstServer: 0 });
+    g.start();
+    const fromRight = serveFromRight(g.match);
+    const tx = inServiceBox(-2.2, -4.5, 0, fromRight) ? -2.2 : 2.2;
+    const b = g.ball;
+    const from = { x: -tx * 0.3, y: 2.7, z: 12.2 };
+    const v = planShot(from, tx, -4.5, { speed: 22, margin: 0.1 });
+    lowerOverNet(from, v, 0.006 - (id % 6) * 0.005);
+    Object.assign(b, from, { vx: v.vx, vy: v.vy, vz: v.vz, hitId: id, bounces: 0, lastHitter: 0, inPlay: true, isServe: true, visible: true, letPending: false });
+    g.state = 'rally';
+    g.events.length = 0;
+    const types = [];
+    for (let i = 0; i < 240 && g.state === 'rally'; i++) {
+      g.step(BALL.fixedDt, null);
+      for (const e of g.events) types.push(e.type);
+      g.events.length = 0;
+    }
+    if (types.includes('let')) found = { types, g };
+  }
+  assert.ok(found, 'some cord serve lands in the box');
+  assert.equal(found.types.includes('fault'), false, 'a let is not a fault');
+  assert.equal(found.g.match.serveNumber, 1, 'still the first serve');
+  assert.deepEqual(found.g.match.points ?? [0, 0], [0, 0], 'no point is played');
 });
 
 // ---------------------------------------------------------------- split step

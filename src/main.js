@@ -1,7 +1,7 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
 import { AI, BALL, CONTACT, COURT, NAMES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
-import { createBall, stepBall, planShot, predictAtPlane } from './ball.js';
+import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox } from './rules.js';
 import { createAI } from './ai.js';
 
@@ -135,6 +135,7 @@ export function createGame(options = {}) {
     ball.isServe = false;
     ball.bounces = 0;
     ball.lastHitter = -1;
+    ball.letPending = false;
     holdBall(server);
     g.rallyHits = 0;
     g.state = 'serveReady';
@@ -203,10 +204,21 @@ export function createGame(options = {}) {
     ball.hitId++;
     ball.inPlay = true;
     ball.isServe = true;
+    ball.letPending = false;
     g.rallyHits = 1;
     g.state = 'rally';
     if (human) events.push({ type: 'timing', kind: perfect ? 'perfect' : e < 0 ? 'early' : 'late', error: e, serve: true });
     events.push({ type: 'hit', side: p.side, kind: 'serve', kmh: Math.hypot(v.vx, v.vy, v.vz) * 3.6 });
+  }
+
+  // A serve that clips the net and still lands in the box is a let: replayed, no fault.
+  function callLet() {
+    ball.inPlay = false;
+    ball.isServe = false;
+    g.state = 'pointOver';
+    g.timer = SERVE.faultDelay;
+    afterPause = 'serve';
+    events.push({ type: 'let', serveNumber: match.serveNumber });
   }
 
   function serveFault(reason) {
@@ -242,13 +254,17 @@ export function createGame(options = {}) {
     if (!p.slide && !smash && p.chaseT >= PLAYER.slideChaseTime) startSlide(p);
   }
 
-  function launch(p, tx, tz, kind, speed, volley = false) {
+  // risky: this shot flies low enough to clip the tape, or find the net
+  function launch(p, tx, tz, kind, speed, volley = false, risky = false) {
     const from = { x: ball.x, y: Math.max(SHOT.minContactHeight, ball.y), z: ball.z };
     let opts;
     if (kind === 'lob') opts = { time: SHOT.lobTime };
     else if (kind === 'smash') opts = { speed, margin: SMASH.netMargin };
     else opts = { speed: kind === 'slice' ? speed * SHOT.sliceFactor : speed };
     const v = planShot(from, tx, tz, opts);
+    if (risky && kind !== 'lob' && kind !== 'smash') {
+      lowerOverNet(from, v, SHOT.netRiskLow + rng() * (SHOT.netRiskHigh - SHOT.netRiskLow));
+    }
     ball.y = from.y;
     ball.vx = v.vx; ball.vy = v.vy; ball.vz = v.vz;
     ball.spin = kind === 'slice' ? 'slice' : 'flat';
@@ -283,7 +299,9 @@ export function createGame(options = {}) {
       let speed = s.plan.speed;
       if (smash) speed *= SMASH.cpuSpeedFactor;
       else if (volley) speed *= VOLLEY.cpuSpeedFactor;
-      launch(p, s.plan.tx, s.plan.tz, kind, speed, volley);
+      // stretched, it is likelier to catch the tape
+      const risky = !smash && rng() < AI.netRisk + AI.netRiskStretch * (s.plan.stretch || 0);
+      launch(p, s.plan.tx, s.plan.tz, kind, speed, volley, risky);
       return;
     }
     // Human shot: direction held at contact aims it, timing decides the quality.
@@ -303,7 +321,9 @@ export function createGame(options = {}) {
       depth *= 1 - Math.min(SHOT.maxShort, Math.abs(e) * SHOT.shortRate);
     }
     events.push({ type: 'timing', kind: perfect ? 'perfect' : e > 0 ? 'early' : 'late', error: e, smash, volley });
-    launch(p, tx, -p.sign * depth, kind, speed, volley);
+    // a mistimed shot can fly low and clip the tape
+    const risky = !perfect && !smash && rng() < SHOT.netRiskChance * Math.min(1, Math.abs(e) / 0.1);
+    launch(p, tx, -p.sign * depth, kind, speed, volley, risky);
   }
 
   // ------------------------------------------------------------ rules
@@ -332,9 +352,11 @@ export function createGame(options = {}) {
     const hitter = ball.lastHitter;
     if (ball.isServe) {
       if (e.type === 'net') serveFault('net');
+      else if (e.type === 'netCord') ball.letPending = true;
       else if (e.type === 'bounce') {
         if (e.n === 1) {
           if (!inServiceBox(e.x, e.z, hitter, serveFromRight(match))) serveFault('out');
+          else if (ball.letPending) callLet();
         } else endPoint(hitter, 'ace');
       }
       return;
@@ -618,7 +640,14 @@ async function boot() {
           audio.play('bounce', { speed: e.v, x: e.x, z: e.z });
           break;
         case 'net':
-          audio.play('net', { x: game.ball.x, z: 0 });
+          audio.play(e.cord ? 'cord' : 'net', { x: e.x, z: 0 });
+          break;
+        case 'netCord':
+          audio.play('cord', { x: e.x, z: 0 });
+          hud.showCall('NET CORD');
+          break;
+        case 'let':
+          hud.showMessage('LET', e.serveNumber === 1 ? 'FIRST SERVE' : 'SECOND SERVE', 1.2);
           break;
         case 'serveReady':
           showScore();

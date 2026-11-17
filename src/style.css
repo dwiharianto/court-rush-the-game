@@ -51,6 +51,7 @@ html, body {
 #timing.perfect { color: #d8f23a; }
 #timing.early { color: #ffb04a; }
 #timing.late { color: #ff6b5e; }
+#timing.call { color: #ffffff; }
 
 @media (max-width: 560px) {
   #scoreboard { min-width: 190px; }

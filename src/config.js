@@ -165,6 +165,7 @@ export const BALL = {
   fixedDt: 1 / 120, // game step
   maxSubstep: 1 / 240, // ball integration step
   restSpeed: 0.6, // below this vertical speed the ball rolls instead of bouncing
+  cordBelow: 0.025, // a ball centre up to this far below the tape still clips it (net cord)
 };
 
 export const SHOT = {
@@ -183,6 +184,11 @@ export const SHOT = {
   shortRate: 2.0, // fraction of depth lost per second of timing error
   maxShort: 0.35,
   minContactHeight: 0.25,
+  // Net cords: a mistimed shot can fly low enough to clip the tape.
+  netRiskChance: 0.05, // chance at a badly mistimed shot (scaled down for small timing errors)
+  netRiskWindow: 1.8, // only shots crossing within this height of the tape are affected (not lobs)
+  netRiskLow: -0.035, // crossing height range, ball centre above the tape: below about -0.025 is the net
+  netRiskHigh: 0.045,
 };
 
 // Where a swing can meet the ball, relative to the player.
@@ -248,6 +254,8 @@ export const AI = {
   stretchPaceMin: 19, // incoming ball speed where pace starts to add pressure, m/s
   stretchPaceMax: 31,
   wideMiss: 0.9, // metres outside the sideline on a forced wide miss
+  netRisk: 0.012, // chance a CPU shot flies low enough to clip the tape
+  netRiskStretch: 0.03, // extra chance when it is stretched
   fatigueStart: 12, // rally length (total hits) after which the CPU starts to tire
   fatigueRate: 0.004, // extra miss chance per hit beyond that
   hitHeight: 1.05, // preferred contact height after the bounce

@@ -179,6 +179,16 @@ export function createAudio(options = {}) {
     for (let i = 0; i < 4; i++) burst(at + 0.02 + i * 0.028, { f: 1700 + rnd() * 600, q: 3, amp: 0.25 * k * (1 - i * 0.2), tau: 0.012, dest });
   }
 
+  // Ball clipping the tape: a sharp tick on the band and a short shiver of the mesh.
+  function cord(opts) {
+    const at = now() + 0.005;
+    const dest = place(opts);
+    const k = AUDIO.levels.net;
+    burst(at, { f: 1500, q: 1.4, amp: 0.55 * k, tau: 0.004, dest });
+    burst(at, { type: 'lowpass', f: 600, amp: 0.4 * k, tau: 0.02, dest });
+    for (let i = 0; i < 3; i++) burst(at + 0.015 + i * 0.022, { f: 1900 + rnd() * 500, q: 3, amp: 0.15 * k * (1 - i * 0.25), tau: 0.008, dest });
+  }
+
   // Shoe sliding over clay: a gritty scrape that fades in and out.
   function slide(opts) {
     const at = now() + 0.005;
@@ -255,7 +265,7 @@ export function createAudio(options = {}) {
     },
   };
 
-  const SFX = { strike, bounce, net, slide };
+  const SFX = { strike, bounce, net, cord, slide };
 
   return {
     // Browsers only allow audio after a user gesture, so this runs on Play.
@@ -268,7 +278,7 @@ export function createAudio(options = {}) {
       }
       if (ctx.state === 'suspended' && !paused && !options.context) ctx.resume();
     },
-    // name: strike | bounce | net | slide; opts: { kind, power, speed, x, z }
+    // name: strike | bounce | net | cord | slide; opts: { kind, power, speed, x, z }
     play(name, opts = {}) {
       if (!ctx || (ctx.state !== 'running' && !options.context) || !SFX[name]) return;
       if (name === 'strike') strike(opts.kind, opts);
