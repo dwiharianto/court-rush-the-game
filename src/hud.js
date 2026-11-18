@@ -17,6 +17,7 @@ function renderStats(el, data) {
 
 export function createHud(doc = document) {
   const rows = [...doc.querySelectorAll('.sb-row')];
+  const powerEl = doc.getElementById('power'), powerFill = doc.getElementById('power-fill');
   const BALL_R = BALL.radius;
   const challengeBtn = doc.getElementById('challenge-btn'), challengeLeft = doc.getElementById('challenge-left');
   const review = doc.getElementById('review'), rvSvg = doc.getElementById('rv-svg');
@@ -202,6 +203,14 @@ export function createHud(doc = document) {
         els[i].points.textContent = score.points[i];
         els[i].row.classList.toggle('serving', score.server === i);
       }
+    },
+    // the power meter: level 0..1 while charging, null to fade it out
+    setPower(level) {
+      if (level === null) { powerEl.classList.add('hidden'); return; }
+      powerEl.classList.remove('hidden');
+      powerFill.style.width = `${Math.round(level * 100)}%`;
+      powerEl.classList.toggle('max', level >= 0.99);
+      powerEl.classList.toggle('high', level >= 0.75);
     },
     // stamina bars under the names, 0..1
     setStamina(a, b) {

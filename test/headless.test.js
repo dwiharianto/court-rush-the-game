@@ -535,17 +535,22 @@ test('line judge errors and challenges keep the score consistent', () => {
 });
 
 test('match statistics add up', () => {
-  let g = null;
+  // the first complete match
   const reasons = {};
+  let s = null, last = null;
   const st = playPoints(createGame, {
-    difficulty: 'normal', profile: 'solid', seed: 31, points: 120,
-    onStep(game) { g = game; },
+    difficulty: 'normal', profile: 'solid', seed: 31, points: 200,
     onEvent(e, game) {
-      if (e.type === 'matchStart') for (const k of Object.keys(reasons)) delete reasons[k];
-      if (e.type === 'point') reasons[e.reason] = (reasons[e.reason] || 0) + 1;
+      if (s) return;
+      // a point replayed after a challenge is taken back, stats and all
+      if (e.type === 'replay') { reasons[last]--; return; }
+      if (e.type !== 'point') return;
+      last = e.reason;
+      reasons[e.reason] = (reasons[e.reason] || 0) + 1;
+      if (e.set) s = JSON.parse(JSON.stringify(game.stats));
     },
   });
-  const s = g.stats;
+  assert.ok(s, 'a match was completed');
   const total = Object.values(reasons).reduce((a, b) => a + b, 0);
   assert.ok(st.points > 0);
   assert.equal(s.points[0] + s.points[1], total, 'points won add up to points played this match');

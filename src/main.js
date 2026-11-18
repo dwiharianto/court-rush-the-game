@@ -1,6 +1,6 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
-import { AI, AUDIO, BALL, CALLS, CONTACT, COURT, DEFAULT_SURFACE, DIVE, STAMINA, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
+import { AI, AUDIO, BALL, CALLS, CONTACT, COURT, DEFAULT_SURFACE, DIVE, POWER, STAMINA, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
 import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox, lineMargin, serviceMargin, tiredness } from './rules.js';
 import { createAI } from './ai.js';
@@ -167,7 +167,7 @@ export function createGame(options = {}) {
   }
 
   function topSpeed(p) {
-    return p.speed * (p.action === 'ready' ? 1 : PLAYER.swingMoveFactor) * (1 - STAMINA.speedLoss * tiredness(p));
+    return p.speed * (p.action === 'ready' ? (p.charge ? POWER.chargeMove : 1) : PLAYER.swingMoveFactor) * (1 - STAMINA.speedLoss * tiredness(p));
   }
 
   function setAction(p, action) {
@@ -239,11 +239,11 @@ export function createGame(options = {}) {
     p.z += p.vz * dt;
   }
 
-  function startServeSwing(kind) {
+  function startServeSwing(kind, power = null) {
     const p = players[match.server];
     serveError = g.timer - TOSS_APEX_T; // negative: early, positive: late
     setAction(p, 'serve');
-    p.swing = { kind, hand: 1, plan: null, done: false };
+    p.swing = { kind, hand: 1, plan: null, done: false, power };
     considerSplit(players[1 - p.side]);
   }
 
@@ -277,9 +277,17 @@ export function createGame(options = {}) {
     if (s.kind === 'slice') speed *= SERVE.sliceFactor;
     speed *= 1 - STAMINA.shotLoss * tiredness(p);
     tire(p, STAMINA.serve);
+    const pw = s.power;
+    let wildX = 0, wildZ = 0;
+    if (pw !== null && pw !== undefined) {
+      speed *= POWER.serve[0] + POWER.serve[1] * pw;
+      const wild = pw * pw * (perfect ? POWER.calm : 1);
+      wildX = gauss() * POWER.serveScatter * wild;
+      wildZ = gauss() * POWER.serveDepth * wild;
+    }
     const from = { x: ball.x, y: Math.max(1, ball.y), z: ball.z };
     const lift = s.kind === 'slice' ? SPIN.serveSlice : second ? SPIN.secondServe : SPIN.serve;
-    const v = planShot(from, tx, -p.sign * depth, { speed, margin: SERVE.netMargin, lift });
+    const v = planShot(from, tx + wildX, -p.sign * (depth + wildZ), { speed, margin: SERVE.netMargin, lift });
     if (e > 0) v.vy -= over * SERVE.lateDrop;
     ball.y = from.y;
     ball.vx = v.vx; ball.vy = v.vy; ball.vz = v.vz;
@@ -323,7 +331,7 @@ export function createGame(options = {}) {
   }
 
   // ------------------------------------------------------------ swings and shots
-  function startSwing(p, kind, plan = null) {
+  function startSwing(p, kind, plan = null, power = null) {
     const zPlane = p.z - p.sign * CONTACT.front;
     const pr = ball.visible ? predictAtPlane(ball, zPlane, p.sign, 0.6, plane) : null;
     const bx = pr ? pr.x : ball.x;
@@ -345,7 +353,7 @@ export function createGame(options = {}) {
     p.actionT = 0;
     // where the ball should be at contact, for the animation to shape the stroke
     const contactH = pr ? pr.y : 1.0, contactSide = pr ? Math.abs(bx - p.x) : 0.75;
-    p.swing = { kind: smash ? 'smash' : kind, hand, plan, volley, done: false, contactH, contactSide, dive };
+    p.swing = { kind: smash ? 'smash' : kind, hand, plan, volley, done: false, contactH, contactSide, dive, power };
     considerSplit(players[1 - p.side]);
     if (dive) {
       endSlide(p, true);
@@ -439,9 +447,20 @@ export function createGame(options = {}) {
       tx += -s.hand * p.right * e * SHOT.timingShift;
       depth *= 1 - Math.min(SHOT.maxShort, Math.abs(e) * SHOT.shortRate);
     }
-    events.push({ type: 'timing', kind: perfect ? 'perfect' : e > 0 ? 'early' : 'late', error: e, smash, volley });
+    // power: faster, but the errors spread (less so when perfectly timed)
+    const pw = s.power ?? POWER.tap;
+    const touch = kind === 'lob' || (volley && kind === 'slice');
+    let wild = 0;
+    if (!touch) {
+      const f = volley ? POWER.volley : POWER.shot;
+      speed *= f[0] + f[1] * pw;
+      wild = pw * pw * (perfect ? POWER.calm : 1);
+      tx += gauss() * POWER.scatter * wild;
+      depth += gauss() * POWER.depthSpread * wild;
+    }
+    events.push({ type: 'timing', kind: perfect ? 'perfect' : e > 0 ? 'early' : 'late', error: e, smash, volley, power: pw });
     // a mistimed shot can fly low and clip the tape
-    const risky = !perfect && !smash && rng() < SHOT.netRiskChance * Math.min(1, Math.abs(e) / 0.1);
+    const risky = !smash && ((!perfect && rng() < SHOT.netRiskChance * Math.min(1, Math.abs(e) / 0.1)) || rng() < POWER.netRisk * wild);
     launch(p, tx, -p.sign * depth, kind, speed, volley, risky);
   }
 
@@ -638,10 +657,18 @@ export function createGame(options = {}) {
     setupServe();
   }
 
+  // power from how long a shot key was held (a tap is POWER.tap)
+  const powerOf = (t) => POWER.tap + (1 - POWER.tap) * Math.max(0, Math.min(1, (t - POWER.minHold) / (POWER.full - POWER.minHold)));
+  g.powerOf = powerOf;
+
   function stepHuman(dt) {
     const human = players[0];
     const press = input.drive ? 'drive' : input.slice ? 'slice' : input.lob ? 'lob' : null;
     const serving = match.server === 0;
+    // which shot keys are held (scripted input has none: every press is a tap)
+    const held = input.held || null;
+    const charge = human.charge;
+    if (charge) charge.t += dt;
 
     if (g.state === 'serveReady' && serving) {
       // shuffle along the baseline on the correct side of the centre mark
@@ -651,17 +678,41 @@ export function createGame(options = {}) {
       human.x = d * sx;
       human.vx = human.vz = 0;
       holdBall(human);
-      if (press && g.timer >= SERVE.readyDelay) startToss();
+      if (press && g.timer >= SERVE.readyDelay) {
+        startToss();
+        // held through the toss, the serve is charged and struck on release
+        human.charge = held && held[press] ? { kind: press, t: 0, serve: true } : null;
+      }
       return;
     }
     if (g.state === 'toss' && serving) {
       human.vx = human.vz = 0;
-      if (press && human.action === 'toss') startServeSwing(press);
+      if (charge && charge.serve && human.action === 'toss') {
+        if (!held[charge.kind]) {
+          human.charge = null;
+          if (charge.t >= POWER.minHold) startServeSwing(charge.kind, powerOf(charge.t));
+          // a quick tap just tosses; the next press hits
+        }
+        return;
+      }
+      if (press && human.action === 'toss') startServeSwing(press, POWER.tap);
       return;
     }
+    if (charge && charge.serve) human.charge = null;
     if (human.action === 'serve') { serveFollow(human, dt); return; }
-    if (diving(human)) { diveMove(human, dt); return; }
-    if (g.state === 'rally' && human.action === 'ready' && press) startSwing(human, press);
+    if (diving(human)) { human.charge = null; diveMove(human, dt); return; }
+    if (human.charge) {
+      // charging a shot: it is played when the key is let go
+      if (g.state !== 'rally' || human.action !== 'ready') human.charge = null;
+      else if (!held || !held[charge.kind] || charge.t >= POWER.maxHold) {
+        human.charge = null;
+        startSwing(human, charge.kind, null, powerOf(charge.t));
+      }
+    } else if (g.state === 'rally' && human.action === 'ready' && press) {
+      if (held && held[press]) human.charge = { kind: press, t: 0, hand: (ball.x - human.x) * human.right >= 0 ? 1 : -1 };
+      else startSwing(human, press, null, POWER.tap);
+    }
+    if (human.charge) human.charge.hand = (ball.x - human.x) * human.right >= 0 ? 1 : -1;
     if (g.state === 'menu' || g.state === 'matchOver') { drive(human, 0, 0, 0, dt); return; }
     drive(human, input.x, -input.y, topSpeed(human), dt);
   }
@@ -1078,12 +1129,13 @@ async function boot() {
   window.addEventListener('resize', resize);
   resize();
 
-  const frameInput = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false };
+  const frameInput = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false, held: null };
   let last = performance.now();
   let acc = 0;
   let dustClock = 0;
   let shownChallenge = false;
   let shownStamina = [-1, -1];
+  let shownPower = null;
   // render interpolation: positions one physics step back, blended toward the latest
   const prevP = [{ x: 0, z: 0 }, { x: 0, z: 0 }], drawP = [{}, {}];
   const prevBall = { x: 0, y: 0, z: 0 }, drawBall = {};
@@ -1122,6 +1174,7 @@ async function boot() {
       frameInput.slice = first && input.consume('slice');
       frameInput.lob = first && input.consume('lob');
       frameInput.challenge = first && input.consume('challenge');
+      frameInput.held = input.held();
       game.step(BALL.fixedDt, frameInput);
       first = false;
       acc -= BALL.fixedDt;
@@ -1151,6 +1204,9 @@ async function boot() {
     // the crowd settles as a player gets ready to serve and stays quiet through the rally
     const st = game.state;
     audio.setCrowd(st === 'serveReady' || st === 'toss' || st === 'rally' ? 'hush' : 'chatter');
+    const ch = game.players[0].charge;
+    const pw = ch ? game.powerOf(ch.t) : null;
+    if (pw !== shownPower) { shownPower = pw; hud.setPower(pw); }
     const sa = game.players[0].stamina, sb = game.players[1].stamina;
     if (Math.abs(sa - shownStamina[0]) > 0.005 || Math.abs(sb - shownStamina[1]) > 0.005) { shownStamina = [sa, sb]; hud.setStamina(sa, sb); }
     const canCh = game.challengeHint(0);
