@@ -74,9 +74,24 @@ export function createGame(options = {}) {
       p.vx *= f; p.vz *= f;
       if (ns <= PLAYER.slideEndSpeed) endSlide(p);
     } else {
-      const k = Math.min(1, dt * PLAYER.accel);
-      p.vx += (wx * top - p.vx) * k;
-      p.vz += (wz * top - p.vz) * k;
+      // Momentum: speeding up is limited (and gets harder near top speed), braking is
+      // quicker, and turning at speed takes grip, so changes of direction carry over.
+      let dx = wx * top - p.vx, dz = wz * top - p.vz;
+      if (speed > 0.3) {
+        const ux = p.vx / speed, uz = p.vz / speed;
+        let along = dx * ux + dz * uz;
+        let ax = dx - along * ux, az = dz - along * uz;
+        const push = PLAYER.accelRun * (1 - PLAYER.accelFade * Math.min(1, speed / p.speed));
+        along = Math.max(-PLAYER.brake * dt, Math.min(push * dt, along));
+        const across = Math.hypot(ax, az), turnMax = PLAYER.turnGrip * dt;
+        if (across > turnMax) { ax *= turnMax / across; az *= turnMax / across; }
+        dx = along * ux + ax; dz = along * uz + az;
+      } else {
+        const d = Math.hypot(dx, dz), max = PLAYER.accelStart * dt;
+        if (d > max) { dx *= max / d; dz *= max / d; }
+      }
+      p.vx += dx;
+      p.vz += dz;
       // planting to push off back the other way at speed: the shoe grips (and squeaks, on a hard court)
       p.plantCool = Math.max(0, (p.plantCool || 0) - dt);
       const reversing = wx * p.vx + wz * p.vz < -0.5 * speed * Math.hypot(wx, wz);
@@ -800,6 +815,22 @@ async function boot() {
   let last = performance.now();
   let acc = 0;
   let dustClock = 0;
+  // render interpolation: positions one physics step back, blended toward the latest
+  const prevP = [{ x: 0, z: 0 }, { x: 0, z: 0 }], drawP = [{}, {}];
+  const prevBall = { x: 0, y: 0, z: 0 }, drawBall = {};
+  function snapshot() {
+    game.players.forEach((p, i) => { prevP[i].x = p.x; prevP[i].z = p.z; });
+    prevBall.x = game.ball.x; prevBall.y = game.ball.y; prevBall.z = game.ball.z;
+  }
+  function between(cur, prev, a, out) {
+    Object.assign(out, cur);
+    const dx = cur.x - prev.x, dz = cur.z - prev.z, dy = (cur.y ?? 0) - (prev.y ?? 0);
+    if (dx * dx + dy * dy + dz * dz > 1) return out; // a jump (new serve, new point): no smearing
+    out.x = prev.x + dx * a;
+    out.z = prev.z + dz * a;
+    if (cur.y !== undefined) out.y = prev.y + dy * a;
+    return out;
+  }
 
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -814,7 +845,9 @@ async function boot() {
     frameInput.x = m.x;
     frameInput.y = m.y;
     let first = true;
+    if (acc >= BALL.fixedDt) snapshot();
     while (acc >= BALL.fixedDt) {
+      if (!first) snapshot();
       // button presses are edges: only the first step of a frame sees them
       frameInput.drive = first && input.consume('drive');
       frameInput.slice = first && input.consume('slice');
@@ -825,9 +858,11 @@ async function boot() {
     }
     handleEvents();
     if (clockRunning) matchTime += dt;
-    views[0].update(dt, game.players[0]);
-    views[1].update(dt, game.players[1]);
-    world.updateBall(game.ball, dt);
+    // draw between the last two physics steps, so motion is smooth at any frame rate
+    const alpha = acc / BALL.fixedDt;
+    views[0].update(dt, between(game.players[0], prevP[0], alpha, drawP[0]));
+    views[1].update(dt, between(game.players[1], prevP[1], alpha, drawP[1]));
+    world.updateBall(between(game.ball, prevBall, alpha, drawBall), dt);
     // clay dust kicked up ahead of a sliding foot
     dustClock += dt;
     for (const p of game.players) {

@@ -181,6 +181,8 @@ function paint(body, prep, o, dressed = false, hairMesh = false) {
     if (dressed && part !== P.scalp) {
       lift = 0; // the real garments carry the volume and colour; skin shows at the edges
       if ([P.torso, P.pelvis, P.upperarm, P.forearm, P.thigh, P.shin, P.foot].includes(part)) c.copy(skin);
+      // skin that the clothes cover sits a little inside them, so it cannot poke through as limbs bend
+      if (part === P.torso || part === P.pelvis || part === P.foot || (part === P.upperarm && t < 0.5) || (part === P.thigh && t < 0.6)) lift = -0.008;
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
     if (hairMesh && part === P.scalp) lift = 0.002;
@@ -210,7 +212,7 @@ export function createBodyRig(body, options = {}) {
     const keep = [];
     for (let t = 0; t < bodyIndex.length; t += 3) {
       const a = bodyIndex[t], b = bodyIndex[t + 1], c = bodyIndex[t + 2];
-      if (hidden.has(a) && hidden.has(b) && hidden.has(c)) continue; // skin under the clothes
+      if (hidden.has(a) || hidden.has(b) || hidden.has(c)) continue; // skin under the clothes
       keep.push(a, b, c);
     }
     bodyIndex = keep;

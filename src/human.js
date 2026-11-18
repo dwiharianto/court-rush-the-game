@@ -427,6 +427,7 @@ export function createFigure(options = {}) {
 // (map action names to clips, actionT to clip time) and drop in unchanged.
 
 const LEG_KEYS = ['lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'lift'];
+const LEG_SET = new Set([...LEG_KEYS, 'hipY']);
 
 const READY = makePose({
   lHip: 0.5, rHip: 0.5, lKnee: 0.85, rKnee: 0.85, lHipZ: 0.2, rHipZ: 0.2,
@@ -555,6 +556,10 @@ const CLIPS = {
 };
 const NAMED = { ...POSES, ready: READY, trophy: TROPHY, serveStance: SERVE_STANCE };
 
+// Clip sampling: a smooth curve through the key poses (cubic Hermite, tangents from
+// the neighbouring keys and their timing), so a stroke accelerates and decelerates
+// through its keys instead of moving in straight lines between them. The first and
+// last keys have zero tangents: the clip eases out of and into rest.
 function sampleClip(keys, t, out) {
   if (t <= keys[0].t) return copyPose(out, keys[0].pose);
   const last = keys[keys.length - 1];
@@ -562,10 +567,17 @@ function sampleClip(keys, t, out) {
   let i = 1;
   while (keys[i].t < t) i++;
   const a = keys[i - 1], b = keys[i];
-  let u = (t - a.t) / (b.t - a.t);
-  if (i === 1) u = u * u; // ease out of the start pose
-  else if (i === keys.length - 1) u = 1 - (1 - u) * (1 - u); // settle into the end pose
-  return blendPose(out, a.pose, b.pose, u);
+  const pa = keys[i - 2], pb = keys[i + 1];
+  const h = b.t - a.t;
+  const u = (t - a.t) / h, u2 = u * u, u3 = u2 * u;
+  const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+  for (const k of POSE_KEYS) {
+    const va = a.pose[k] || 0, vb = b.pose[k] || 0;
+    const ma = pa ? ((vb - (pa.pose[k] || 0)) / (b.t - pa.t)) * h : 0;
+    const mb = pb ? (((pb.pose[k] || 0) - va) / (pb.t - a.t)) * h : 0;
+    out[k] = h00 * va + h10 * ma + h01 * vb + h11 * mb;
+  }
+  return out;
 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -615,6 +627,10 @@ export function createCharacter(options = {}) {
   let wasSliding = false, slideSide = 1, slideLateral = 1;
   let turnedRun = false; // turned around to chase a ball going over or past
   let splitT = 99;
+  // smoothing: a short blend into each new action, and critically damped springs
+  // on the body (the hitting arm stays exact while swinging, for clean contact)
+  const entryFrom = makePose(), last = makePose(), spring = makePose(), springV = makePose();
+  let prevAction = 'ready', prevT = 0, entryT = 1, springReady = false;
 
   function update(dt, s) {
     time += dt;
@@ -698,7 +714,9 @@ export function createCharacter(options = {}) {
     // run cycle: hips and shoulders counter-rotate, arms pump, knees drive
     const k = clamp(speed / 6.2, 0, 1);
     const sn = Math.sin(phase);
-    const hipAmp = 0.3 + 0.32 * k, kneeAmp = 0.7 + 0.9 * k, armAmp = 0.35 + 0.45 * k;
+    // the thigh swing that covers half a stride with a 0.92 m leg, so planted feet do not skate
+    const hipAmp = Math.asin(Math.min(0.72, stride / (4 * 0.92))) * (0.85 + 0.15 * k);
+    const kneeAmp = 0.7 + 0.9 * k, armAmp = 0.35 + 0.45 * k;
     copyPose(run, READY);
     run.lHip = 0.3 + hipAmp * sn; run.rHip = 0.3 - hipAmp * sn;
     // the knee folds after push-off and through the swing, then straightens to land
@@ -757,6 +775,26 @@ export function createCharacter(options = {}) {
       else copyPose(out, loco);
     }
 
+    // blend into a new action from wherever the body was
+    if (acting && (s.action !== prevAction || s.actionT < prevT)) { copyPose(entryFrom, last); entryT = 0; }
+    prevAction = s.action; prevT = s.actionT;
+    if (entryT < 1) {
+      entryT = Math.min(1, entryT + dt / ANIM.entryBlend);
+      const u = entryT * entryT * (3 - 2 * entryT);
+      blendPose(out, entryFrom, out, u);
+    }
+    // springs: the whole body when moving about, only the legs during a stroke
+    if (!springReady) { copyPose(spring, out); springReady = true; }
+    const w = ANIM.springFreq, steps = Math.max(1, Math.ceil(dt / (1 / 120)));
+    const h = dt / steps;
+    for (const key of POSE_KEYS) {
+      if (acting && !LEG_SET.has(key)) { springV[key] = 0; spring[key] = out[key]; continue; } // strokes stay exact above the hips
+      let x = spring[key], v = springV[key];
+      for (let n = 0; n < steps; n++) { v += (w * w * (out[key] - x) - 2 * w * v) * h; x += v * h; }
+      spring[key] = x; springV[key] = v;
+      out[key] = x;
+    }
+    copyPose(last, out);
     rig.setPose(out);
     rig.object3d.position.set(s.x, 0, s.z);
     rig.object3d.rotation.y = s.facing + yaw;

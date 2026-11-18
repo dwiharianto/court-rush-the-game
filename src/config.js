@@ -120,7 +120,12 @@ export const BODY = {
 
 export const PLAYER = {
   speed: 6.2, // near player top speed, m/s
-  accel: 14, // how quickly velocity approaches the input, 1/s
+  // movement physics (m/s^2): first step, speeding up (fading near top speed), braking, turning grip
+  accelStart: 20,
+  accelRun: 18,
+  accelFade: 0.55,
+  brake: 26,
+  turnGrip: 22,
   swingMoveFactor: 0.35, // movement speed multiplier while swinging
   startZ: 12.5,
   minZ: 1.2,
@@ -178,6 +183,8 @@ export const ANIM = {
   strideBase: 1.0, // stride length per cycle at walking pace; grows with speed
   shuffleMax: 3.2, // below this speed a sideways move is a side shuffle facing the net
   shuffleStride: 1.1,
+  entryBlend: 0.07, // seconds to blend from the current pose into a new stroke or serve
+  springFreq: 26, // rad/s, smoothing springs on the body (higher is tighter)
   splitTime: 0.34, // split step duration: starts as the opponent swings, lands about as the ball is struck
   runBlendSpeed: 2.4, // speed at which the run pose is fully blended in
   runBlendRate: 9,
@@ -277,9 +284,9 @@ export const AI = {
   //   shotSpeed    drive speed, m/s; serveSpeed and serveError (timing spread, seconds)
   //   netRush      chance of following a short-ball attack to the net
   levels: {
-    easy: { speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.4, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 17, serveSpeed: 23, serveError: 0.1, netRush: 0.15 },
-    normal: { speed: 5.4, errorSize: 0.8, errorRate: 0.05, reaction: 0.28, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.09, awayChance: 0.75, shotSpeed: 20, serveSpeed: 27, serveError: 0.075, netRush: 0.25 },
-    hard: { speed: 6.2, errorSize: 0.5, errorRate: 0.03, reaction: 0.2, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.06, awayChance: 0.88, shotSpeed: 23, serveSpeed: 31, serveError: 0.05, netRush: 0.35 },
+    easy: { speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.33, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 17, serveSpeed: 23, serveError: 0.1, netRush: 0.15 },
+    normal: { speed: 5.6, errorSize: 0.8, errorRate: 0.05, reaction: 0.21, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.09, awayChance: 0.75, shotSpeed: 20, serveSpeed: 27, serveError: 0.075, netRush: 0.25 },
+    hard: { speed: 6.2, errorSize: 0.5, errorRate: 0.03, reaction: 0.11, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.06, awayChance: 0.88, shotSpeed: 23, serveSpeed: 31, serveError: 0.05, netRush: 0.35 },
   },
   stretchRun: 6, // metres of running that count as fully stretched
   stretchPaceMin: 19, // incoming ball speed where pace starts to add pressure, m/s

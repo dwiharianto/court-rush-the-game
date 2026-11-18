@@ -84,7 +84,7 @@ export function createAI(level, rng = Math.random) {
   function stretchNow(cpu) {
     const moving = Math.hypot(cpu.vx, cpu.vz) / level.speed;
     const ran = Math.min(1, plan.run / AI.stretchRun);
-    return clamp(0.45 * moving + 0.4 * ran + 0.5 * plan.pace, 0, 1);
+    return clamp(0.25 * moving + 0.4 * ran + 0.5 * plan.pace, 0, 1); // momentum means it is often still moving: that alone counts less
   }
 
   function chooseShot(g, stretch) {
