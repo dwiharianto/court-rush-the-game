@@ -1,6 +1,12 @@
 // Tennis rules: court tests and scoring. Pure logic, no rendering.
 // Sides: 0 is the near player (+z half), 1 is the far player (-z half).
-import { BALL, COURT } from './config.js';
+import { BALL, COURT, STAMINA } from './config.js';
+
+// How tired a player is: 0 above STAMINA.tiredFrom, rising to 1 when spent.
+export function tiredness(p) {
+  const s = p.stamina ?? 1;
+  return Math.max(0, Math.min(1, (STAMINA.tiredFrom - s) / STAMINA.tiredFrom));
+}
 
 const sideSign = (side) => (side === 0 ? 1 : -1);
 

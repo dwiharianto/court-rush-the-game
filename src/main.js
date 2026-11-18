@@ -1,15 +1,15 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
-import { AI, AUDIO, BALL, CALLS, CONTACT, COURT, DEFAULT_SURFACE, DIVE, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
+import { AI, AUDIO, BALL, CALLS, CONTACT, COURT, DEFAULT_SURFACE, DIVE, STAMINA, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
 import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
-import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox, lineMargin, serviceMargin } from './rules.js';
+import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox, lineMargin, serviceMargin, tiredness } from './rules.js';
 import { createAI } from './ai.js';
 
 const NO_INPUT = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false };
 const TOSS_VY = Math.sqrt(2 * BALL.gravity * (SERVE.tossApex - SERVE.tossY0));
 const TOSS_APEX_T = TOSS_VY / BALL.gravity; // ideal moment for the second press
 
-function makePlayer(side, speed) {
+function makePlayer(side, speed, fitness = 1) {
   const sign = side === 0 ? 1 : -1; // which half of the court (+z or -z)
   return {
     side, sign, speed,
@@ -20,6 +20,8 @@ function makePlayer(side, speed) {
     swing: null, // { kind, hand, plan, done }
     slide: false, slideT: 0, slideX: 0, slideZ: 0, // a slide in progress and where it started
     chaseT: 0, // seconds spent running near top speed
+    stamina: 1, fitness, // stamina 1 fresh to 0 spent; fitness scales how fast it is used
+    resting: false, // between points (for the animation)
   };
 }
 
@@ -28,7 +30,7 @@ export function createGame(options = {}) {
   const levelName = options.difficulty || AI.defaultLevel;
   const level = { ...AI.levels[levelName] };
   const ai = createAI(level, rng);
-  const players = [makePlayer(0, PLAYER.speed), makePlayer(1, level.speed)];
+  const players = [makePlayer(0, PLAYER.speed), makePlayer(1, level.speed, level.fitness ?? 1)];
   const surfaceName = SURFACES[options.surface] ? options.surface : DEFAULT_SURFACE;
   const court = SURFACES[surfaceName];
   const ball = createBall();
@@ -81,7 +83,7 @@ export function createGame(options = {}) {
         const ux = p.vx / speed, uz = p.vz / speed;
         let along = dx * ux + dz * uz;
         let ax = dx - along * ux, az = dz - along * uz;
-        const push = PLAYER.accelRun * (1 - PLAYER.accelFade * Math.min(1, speed / p.speed));
+        const push = PLAYER.accelRun * (1 - PLAYER.accelFade * Math.min(1, speed / p.speed)) * (1 - STAMINA.accelLoss * tiredness(p));
         along = Math.max(-PLAYER.brake * dt, Math.min(push * dt, along));
         const across = Math.hypot(ax, az), turnMax = PLAYER.turnGrip * dt;
         if (across > turnMax) { ax *= turnMax / across; az *= turnMax / across; }
@@ -134,7 +136,21 @@ export function createGame(options = {}) {
     p.chaseT = 0;
   }
 
+  // ------------------------------------------------------------ stamina
+  function tire(p, amount) { p.stamina = Math.max(0, p.stamina - amount * p.fitness); }
+  function rest(p, amount) { p.stamina = Math.min(1, p.stamina + amount); }
+  function updateStamina(p, dt) {
+    const pause = g.state === 'pointOver' || g.state === 'serveReady' || g.state === 'toss' || g.state === 'review';
+    p.resting = g.state === 'pointOver' && p.action === 'ready';
+    if (pause) { rest(p, STAMINA.restPause * dt); return; }
+    if (g.state !== 'rally') return;
+    const v = Math.hypot(p.vx, p.vz) / p.speed;
+    if (v < 0.2) rest(p, STAMINA.restRally * dt);
+    else tire(p, STAMINA.run * v * v * dt);
+  }
+
   function startSlide(p) {
+    tire(p, STAMINA.slide);
     p.slide = true;
     p.slideT = 0;
     p.slideX = p.x; p.slideZ = p.z;
@@ -148,7 +164,7 @@ export function createGame(options = {}) {
   }
 
   function topSpeed(p) {
-    return p.speed * (p.action === 'ready' ? 1 : PLAYER.swingMoveFactor);
+    return p.speed * (p.action === 'ready' ? 1 : PLAYER.swingMoveFactor) * (1 - STAMINA.speedLoss * tiredness(p));
   }
 
   function setAction(p, action) {
@@ -256,6 +272,8 @@ export function createGame(options = {}) {
     let speed = human ? (perfect ? SERVE.perfectSpeed : SERVE.speed) : level.serveSpeed * (perfect ? 1.12 : 1);
     if (second) speed *= SERVE.secondFactor;
     if (s.kind === 'slice') speed *= SERVE.sliceFactor;
+    speed *= 1 - STAMINA.shotLoss * tiredness(p);
+    tire(p, STAMINA.serve);
     const from = { x: ball.x, y: Math.max(1, ball.y), z: ball.z };
     const lift = s.kind === 'slice' ? SPIN.serveSlice : second ? SPIN.secondServe : SPIN.serve;
     const v = planShot(from, tx, -p.sign * depth, { speed, margin: SERVE.netMargin, lift });
@@ -327,6 +345,7 @@ export function createGame(options = {}) {
       const dir = Math.sign(bx - p.x) || 1;
       p.vx = dir * Math.max(DIVE.lunge, p.vx * dir);
       p.vz *= 0.4;
+      tire(p, STAMINA.dive);
       events.push({ type: 'dive', side: p.side, x: p.x, z: p.z, dir });
       return;
     }
@@ -336,6 +355,10 @@ export function createGame(options = {}) {
 
   // risky: this shot flies low enough to clip the tape, or find the net
   function launch(p, tx, tz, kind, speed, volley = false, risky = false) {
+    const tired = tiredness(p);
+    speed *= 1 - STAMINA.shotLoss * tired;
+    tx += gauss() * STAMINA.scatter * tired * (p.side === 0 ? 1 : 0.5); // the CPU's own errors grow too (ai.js)
+    tire(p, speed >= SHOT.driveSpeed ? STAMINA.power : STAMINA.hit);
     const from = { x: ball.x, y: Math.max(SHOT.minContactHeight, ball.y), z: ball.z };
     // spin by shot: drives are topspin, slices and drop shots backspin, smashes flat
     const lift = kind === 'lob' ? SPIN.lob : kind === 'smash' ? SPIN.smash : kind === 'slice' ? SPIN.slice
@@ -436,6 +459,7 @@ export function createGame(options = {}) {
     ball.isServe = false;
     const server = match.server;
     const result = awardPoint(match, winner);
+    if (result.game) for (const p of players) rest(p, STAMINA.changeover);
     g.state = 'pointOver';
     g.timer = match.over ? RALLY.matchOverDelay : RALLY.pointDelay;
     afterPause = match.over ? 'matchOver' : 'serve';
@@ -570,6 +594,7 @@ export function createGame(options = {}) {
     match = createMatch({ gamesToWin: options.gamesToWin ?? NAMES.gamesToWin, firstServer: options.firstServer ?? 0 });
     events.push({ type: 'matchStart' });
     challenges[0] = challenges[1] = CALLS.challenges;
+    for (const p of players) p.stamina = 1;
     call = null;
     setupServe();
   }
@@ -632,6 +657,7 @@ export function createGame(options = {}) {
   function step(dt, inp) {
     input = inp || NO_INPUT;
     g.time += dt;
+    for (const p of players) updateStamina(p, dt);
     if (g.state === 'review') {
       for (const p of players) drive(p, 0, 0, 0, dt);
       g.timer -= dt;
@@ -1009,6 +1035,7 @@ async function boot() {
   let acc = 0;
   let dustClock = 0;
   let shownChallenge = false;
+  let shownStamina = [-1, -1];
   // render interpolation: positions one physics step back, blended toward the latest
   const prevP = [{ x: 0, z: 0 }, { x: 0, z: 0 }], drawP = [{}, {}];
   const prevBall = { x: 0, y: 0, z: 0 }, drawBall = {};
@@ -1076,6 +1103,8 @@ async function boot() {
     // the crowd settles as a player gets ready to serve and stays quiet through the rally
     const st = game.state;
     audio.setCrowd(st === 'serveReady' || st === 'toss' || st === 'rally' ? 'hush' : 'chatter');
+    const sa = game.players[0].stamina, sb = game.players[1].stamina;
+    if (Math.abs(sa - shownStamina[0]) > 0.005 || Math.abs(sb - shownStamina[1]) > 0.005) { shownStamina = [sa, sb]; hud.setStamina(sa, sb); }
     const canCh = game.challengeHint(0);
     if (canCh !== shownChallenge) { shownChallenge = canCh; hud.setChallengeAvailable(canCh, game.challenges[0]); }
     audio.update(dt);

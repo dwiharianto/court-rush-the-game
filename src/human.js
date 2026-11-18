@@ -27,6 +27,7 @@
 import * as THREE from 'three';
 import { BODY, ANIM, SERVE_ANIM, SWING, SERVE as SERVE_CFG, DIVE as DIVE_CFG } from './config.js';
 import { createBodyRig } from './rig.js';
+import { tiredness } from './rules.js';
 import MOCAP from './assets/mocap.js';
 import CAPTURE from './assets/strokes.js';
 
@@ -445,6 +446,12 @@ const READY = makePose({
 });
 const key = (t, over, base = READY) => ({ t, pose: makePose({ ...base, ...over }) });
 
+// catching breath between points: bent over, hands (and racket) resting on the knees
+const HANDS_ON_KNEES = makePose({
+  lHip: 1.15, rHip: 1.15, lKnee: 0.8, rKnee: 0.8, lHipZ: 0.2, rHipZ: 0.2,
+  torsoX: 1.25, headX: -0.95,
+  lShX: 0.55, lShZ: 0.25, lElbow: 0.15, rShX: 0.5, rShZ: 0.3, rElbow: 0.2, rWristX: -1.0, rWristZ: -0.2,
+});
 const HIT_STANCE = { lHip: 0.45, rHip: 0.45, lKnee: 0.75, rKnee: 0.75, lHipZ: 0.32, rHipZ: 0.32 };
 const S = SWING.duration, C = SWING.ideal;
 
@@ -777,7 +784,7 @@ export function createCharacter(options = {}) {
   let time = Math.random() * 10;
   let phase = 0, shufflePhase = 0;
   let runBlend = 0, shuffleBlend = 0, slideBlend = 0, legBlend = 0;
-  let gaitU = 0, backU = 0, backBlend = 0;
+  let gaitU = 0, backU = 0, backBlend = 0, restBlend = 0;
   const gw = [0, 0, 0, 0];
   let yaw = 0, yawRate = 0;
   let actionBlend = 0;
@@ -952,6 +959,15 @@ export function createCharacter(options = {}) {
     idle.rShX += b * 0.03; idle.lShX += b * 0.03;
     idle.torsoZ = sway * 0.04; idle.hipsYaw = sway * 0.05; idle.headY = -sway * 0.05;
     idle.lift = Math.max(0, -b) * 0.012;
+    // tired: deep, slow breaths, a lower stance and a forward slump
+    const tired = tiredness(s);
+    if (tired > 0) {
+      const breath = Math.sin(time * Math.PI * 2 * 0.85);
+      idle.torsoX += tired * (0.22 + 0.08 * breath);
+      idle.headX -= tired * 0.15;
+      idle.lShX -= tired * 0.15; idle.rShX -= tired * 0.1;
+      idle.lKnee += tired * 0.1; idle.rKnee += tired * 0.1;
+    }
 
     // split step: a small hop as the opponent strikes, landing with bent knees
     splitT += dt;
@@ -1016,9 +1032,16 @@ export function createCharacter(options = {}) {
     shuffle.lift = 0.035 * Math.abs(Math.sin(shufflePhase * 2));
 
     blendPose(loco, idle, run, runBlend);
+    // spent between points: hands on the knees, catching breath
+    restBlend = smooth(restBlend, s.resting && speed < 0.3 ? clamp((tired - 0.35) / 0.35, 0, 1) : 0, 3, dt);
     legBlend = smooth(legBlend, clamp(speed / 0.8, 0, 1) * (1 - shuffleBlend), 10, dt);
     for (const key of LEG_KEYS) loco[key] = idle[key] + (run[key] - idle[key]) * legBlend;
     if (shuffleBlend > 0.001) blendPose(loco, loco, shuffle, shuffleBlend);
+    if (restBlend > 0.001) {
+      copyPose(tmp, HANDS_ON_KNEES);
+      tmp.torsoX += 0.05 * Math.sin(time * Math.PI * 2 * 0.7); // heaving breaths
+      blendPose(loco, loco, tmp, restBlend);
+    }
 
     // ---- planted feet: each foot stays fixed on the court while it carries weight,
     // and steps (in an arc) to where the body will be; the legs reach their feet by IK

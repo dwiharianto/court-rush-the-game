@@ -186,6 +186,14 @@ export function createHud(doc = document) {
         els[i].row.classList.toggle('serving', score.server === i);
       }
     },
+    // stamina bars under the names, 0..1
+    setStamina(a, b) {
+      [a, b].forEach((v, i) => {
+        els[i].row.style.setProperty('--st', v.toFixed(3));
+        els[i].row.classList.toggle('tired', v < 0.6);
+        els[i].row.classList.toggle('spent', v < 0.25);
+      });
+    },
     // challenges left, one pip each
     setChallenges(left) {
       for (let i = 0; i < 2; i++) els[i].ch.textContent = '\u25cf'.repeat(Math.max(0, left[i]));

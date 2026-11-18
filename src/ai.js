@@ -3,7 +3,8 @@
 // going out, and picks a target mostly away from the player with some error.
 // Its weaknesses are all difficulty settings: reaction time, movement and
 // recovery speed, reach, and errors that grow when it is stretched.
-import { AI, BALL, CONTACT, COURT, DIVE, SMASH, SWING, VOLLEY } from './config.js';
+import { AI, BALL, CONTACT, COURT, DIVE, SMASH, STAMINA, SWING, VOLLEY } from './config.js';
+import { tiredness } from './rules.js';
 import { createBall, copyBall, stepBall, predictAtPlane } from './ball.js';
 
 const sim = createBall();
@@ -88,7 +89,7 @@ export function createAI(level, rng = Math.random) {
   }
 
   function chooseShot(g, stretch) {
-    const human = g.players[0];
+    const human = g.players[0], cpu = g.players[1];
     let tx;
     if (rng() < level.awayChance) tx = (human.x > 0 ? -1 : 1) * AI.aimX;
     else tx = (rng() * 2 - 1) * AI.aimX;
@@ -96,7 +97,7 @@ export function createAI(level, rng = Math.random) {
     const spread = level.errorSize * (1 + level.pressure * stretch);
     tx += gauss() * spread;
     tz += gauss() * spread * 0.9;
-    const fatigue = Math.max(0, g.rallyHits - AI.fatigueStart) * AI.fatigueRate; // long rallies wear it down
+    const fatigue = STAMINA.cpuError * tiredness(cpu); // a tired CPU misses more
     if (rng() < level.errorRate + level.pressureMiss * stretch + fatigue) {
       // a clear miss: long, or wide past a sideline
       if (rng() < 0.5) tz = COURT.halfLength + AI.longMiss * (0.5 + rng());

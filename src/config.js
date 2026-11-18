@@ -277,6 +277,21 @@ export const CALLS = {
   cpuWrong: 0.7, cpuHopeful: 0.25,
 };
 
+// Stamina, 1 (fresh) to 0 (spent). Running hard, sliding, diving and big shots use it;
+// standing, the breaks between points and the change of ends after a game restore it.
+// Below `tiredFrom` a player gets gradually slower, weaker and less accurate.
+export const STAMINA = {
+  run: 0.028, // per second at top speed (scales with the square of speed)
+  slide: 0.02, dive: 0.07, hit: 0.004, power: 0.008, serve: 0.008, // per action
+  restRally: 0.015, // per second when nearly still in a rally
+  restPause: 0.036, // per second between points
+  changeover: 0.12, // after each game
+  tiredFrom: 0.6,
+  // at 0 stamina: top speed, acceleration and shot speed lost; aim error in metres
+  speedLoss: 0.12, accelLoss: 0.25, shotLoss: 0.08, scatter: 0.9,
+  cpuError: 0.06, // extra CPU miss chance at 0 stamina
+};
+
 // Spin of each shot, as a lift coefficient (see BALL.magnus): positive is topspin.
 export const SPIN = {
   drive: 0.17, lob: 0.12, slice: -0.11, volley: -0.04, smash: 0.03,
@@ -330,10 +345,11 @@ export const AI = {
   //   shotSpeed    drive speed, m/s; serveSpeed and serveError (timing spread, seconds)
   //   netRush      chance of following a short-ball attack to the net
   // diveChance: how often the CPU dives for a ball just out of reach
+  // fitness: how fast it tires (stamina use multiplier; the player is 1)
   levels: {
-    easy: { diveChance: 0.12, speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.33, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 23, serveSpeed: 33, serveError: 0.1, netRush: 0.15 },
-    normal: { diveChance: 0.2, speed: 5.6, errorSize: 0.8, errorRate: 0.04, reaction: 0.21, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.07, awayChance: 0.75, shotSpeed: 27, serveSpeed: 39, serveError: 0.075, netRush: 0.25 },
-    hard: { diveChance: 0.3, speed: 6.2, errorSize: 0.5, errorRate: 0.022, reaction: 0.11, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.045, awayChance: 0.88, shotSpeed: 31, serveSpeed: 45, serveError: 0.05, netRush: 0.35 },
+    easy: { fitness: 1.2, diveChance: 0.12, speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.33, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 23, serveSpeed: 33, serveError: 0.1, netRush: 0.15 },
+    normal: { fitness: 1.0, diveChance: 0.2, speed: 5.6, errorSize: 0.8, errorRate: 0.04, reaction: 0.21, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.07, awayChance: 0.75, shotSpeed: 27, serveSpeed: 39, serveError: 0.075, netRush: 0.25 },
+    hard: { fitness: 0.85, diveChance: 0.3, speed: 6.2, errorSize: 0.5, errorRate: 0.022, reaction: 0.11, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.045, awayChance: 0.88, shotSpeed: 31, serveSpeed: 45, serveError: 0.05, netRush: 0.35 },
   },
   stretchRun: 6, // metres of running that count as fully stretched
   stretchPaceMin: 19, // incoming ball speed where pace starts to add pressure, m/s
@@ -341,8 +357,6 @@ export const AI = {
   wideMiss: 0.9, // metres outside the sideline on a forced wide miss
   netRisk: 0.012, // chance a CPU shot flies low enough to clip the tape
   netRiskStretch: 0.03, // extra chance when it is stretched
-  fatigueStart: 12, // rally length (total hits) after which the CPU starts to tire
-  fatigueRate: 0.004, // extra miss chance per hit beyond that
   hitHeight: 1.05, // preferred contact height after the bounce
   sideOffset: 0.75, // how far beside the ball the CPU sets up
   forehandBias: 0.4, // metres of extra travel the CPU accepts to hit a forehand

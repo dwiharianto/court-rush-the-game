@@ -243,3 +243,12 @@ body.touch #challenge-btn { bottom: auto; top: max(70px, env(safe-area-inset-top
 #rv-verdict { min-height: 38px; text-align: center; font-size: 22px; font-style: italic; letter-spacing: 0.12em; padding: 6px 0 8px; }
 #rv-verdict.in { color: #d8f23a; }
 #rv-verdict.out { color: #ff6b5e; }
+
+/* Stamina: a thin bar along the bottom of each scoreboard row */
+.sb-row { position: relative; --st: 1; }
+.sb-row::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: calc(var(--st) * 100%);
+  background: #4fd27a; transition: width 0.25s linear, background 0.3s;
+}
+.sb-row.tired::after { background: #f2c14e; }
+.sb-row.spent::after { background: #ff6b5e; }
