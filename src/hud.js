@@ -2,6 +2,19 @@
 import { BALL, NAMES } from './config.js';
 import { PALETTE, BUILDS, HAIR_STYLES, HEADWEAR, WRISTBANDS, cleanName } from './profile.js';
 
+// The statistics table: the player's value, the stat, the opponent's value.
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function renderStats(el, data) {
+  if (!el) return;
+  if (!data) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  const rows = data.rows.map(([label, a, b]) => `<tr><td>${esc(a)}</td><th>${esc(label)}</th><td>${esc(b)}</td></tr>`).join('');
+  el.innerHTML = `<table>
+    <thead><tr><td>${esc(data.names[0])}</td><th>MATCH STATS</th><td>${esc(data.names[1])}</td></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="stats-foot">Longest rally ${data.longestRally} shots | Match time ${esc(data.time)}</div>`;
+}
+
 export function createHud(doc = document) {
   const rows = [...doc.querySelectorAll('.sb-row')];
   const BALL_R = BALL.radius;
@@ -152,8 +165,10 @@ export function createHud(doc = document) {
     onQuit(handler) { quitHandler = handler; },
     onSound(handler) { soundHandler = handler; },
     setSound(on) { soundButton.textContent = on ? 'Sound: on' : 'Sound: off'; soundButton.setAttribute('aria-pressed', String(on)); },
-    showPause(scoreLine) {
+    // data: { names: [a, b], rows: [[label, a, b]], longestRally, time }
+    showPause(scoreLine, data = null) {
       doc.getElementById('pause-score').textContent = scoreLine;
+      renderStats(doc.getElementById('pause-stats'), data);
       pauseEl.classList.remove('hidden');
       doc.body.classList.add('paused');
       pauseButton.blur();
@@ -169,6 +184,8 @@ export function createHud(doc = document) {
       doc.getElementById('menu-headline').textContent = result ? result.headline : '';
       doc.getElementById('menu-detail').textContent = result ? result.detail : '';
       doc.getElementById('menu-result').style.display = result ? 'block' : 'none';
+      renderStats(doc.getElementById('menu-stats'), result && result.stats);
+      menu.classList.toggle('has-result', !!(result && result.stats)); // the stats take the controls' place
       playButton.textContent = result && result.button ? result.button : 'Play';
       menu.classList.remove('hidden');
       doc.body.classList.add('in-menu');

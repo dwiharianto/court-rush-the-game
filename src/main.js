@@ -4,6 +4,7 @@ import { AI, AUDIO, BALL, CALLS, CONTACT, COURT, DEFAULT_SURFACE, DIVE, STAMINA,
 import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox, lineMargin, serviceMargin, tiredness } from './rules.js';
 import { createAI } from './ai.js';
+import { createStats, resetStats, loadStats, statRows } from './stats.js';
 
 const NO_INPUT = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false };
 const TOSS_VY = Math.sqrt(2 * BALL.gravity * (SERVE.tossApex - SERVE.tossY0));
@@ -30,6 +31,7 @@ export function createGame(options = {}) {
   const levelName = options.difficulty || AI.defaultLevel;
   const level = { ...AI.levels[levelName] };
   const ai = createAI(level, rng);
+  const stats = createStats();
   const players = [makePlayer(0, PLAYER.speed), makePlayer(1, level.speed, level.fitness ?? 1)];
   const surfaceName = SURFACES[options.surface] ? options.surface : DEFAULT_SURFACE;
   const court = SURFACES[surfaceName];
@@ -55,6 +57,7 @@ export function createGame(options = {}) {
     difficulty: levelName,
     level,
     tossApexTime: TOSS_APEX_T,
+    stats,
     start, step,
   };
 
@@ -291,11 +294,14 @@ export function createGame(options = {}) {
     g.rallyHits = 1;
     g.state = 'rally';
     if (human) events.push({ type: 'timing', kind: perfect ? 'perfect' : e < 0 ? 'early' : 'late', error: e, serve: true });
+    if (!second) stats.firstServes[p.side]++;
+    stats.fastestServe[p.side] = Math.max(stats.fastestServe[p.side], Math.hypot(v.vx, v.vy, v.vz) * 3.6);
     events.push({ type: 'hit', side: p.side, kind: 'serve', kmh: Math.hypot(v.vx, v.vy, v.vz) * 3.6 });
   }
 
   // A serve that clips the net and still lands in the box is a let: replayed, no fault.
   function callLet() {
+    if (match.serveNumber === 1) stats.firstServes[match.server]--;
     ball.inPlay = false;
     ball.isServe = false;
     g.state = 'pointOver';
@@ -308,6 +314,7 @@ export function createGame(options = {}) {
     ball.inPlay = false;
     ball.isServe = false;
     const server = match.server;
+    if (match.serveNumber === 1) stats.firstFaults[server]++;
     if (fault(match)) { finishPoint(1 - server, 'doubleFault', reason); return; }
     g.state = 'pointOver';
     g.timer = SERVE.faultDelay;
@@ -346,6 +353,7 @@ export function createGame(options = {}) {
       p.vx = dir * Math.max(DIVE.lunge, p.vx * dir);
       p.vz *= 0.4;
       tire(p, STAMINA.dive);
+      stats.dives[p.side]++;
       events.push({ type: 'dive', side: p.side, x: p.x, z: p.z, dir });
       return;
     }
@@ -359,6 +367,9 @@ export function createGame(options = {}) {
     speed *= 1 - STAMINA.shotLoss * tired;
     tx += gauss() * STAMINA.scatter * tired * (p.side === 0 ? 1 : 0.5); // the CPU's own errors grow too (ai.js)
     tire(p, speed >= SHOT.driveSpeed ? STAMINA.power : STAMINA.hit);
+    // a shot played under pressure: diving, sliding, at full stretch, or a CPU plan it was stretched for
+    const sw = p.swing;
+    p.lastShotForced = !!(p.slide || (sw && (sw.dive || sw.contactSide > 1.2 || (sw.plan && sw.plan.stretch > 0.6))));
     const from = { x: ball.x, y: Math.max(SHOT.minContactHeight, ball.y), z: ball.z };
     // spin by shot: drives are topspin, slices and drop shots backspin, smashes flat
     const lift = kind === 'lob' ? SPIN.lob : kind === 'smash' ? SPIN.smash : kind === 'slice' ? SPIN.slice
@@ -458,6 +469,7 @@ export function createGame(options = {}) {
     ball.inPlay = false;
     ball.isServe = false;
     const server = match.server;
+    countPoint(winner, reason, server);
     const result = awardPoint(match, winner);
     if (result.game) for (const p of players) rest(p, STAMINA.changeover);
     g.state = 'pointOver';
@@ -467,6 +479,29 @@ export function createGame(options = {}) {
       type: 'point', winner, reason, serveReason, server, hitter: ball.lastHitter, rallyHits: g.rallyHits,
       game: result.game, set: result.set,
     });
+  }
+
+  // the statistics of a finished point (before the score moves on); a player within
+  // NET_ZONE metres of the net when it ends played it at the net
+  const NET_ZONE = 6;
+  function countPoint(winner, reason, server) {
+    const receiver = 1 - server, hitter = ball.lastHitter;
+    const P = match.points, second = match.serveNumber === 2;
+    stats.points[winner]++;
+    stats.longestRally = Math.max(stats.longestRally, g.rallyHits);
+    if (second) { stats.secondPlayed[server]++; if (winner === server) stats.secondWon[server]++; }
+    else if (reason !== 'doubleFault' && winner === server) stats.firstWon[server]++;
+    // a break point: the receiver wins the game by winning this point
+    if (P[receiver] >= 3 && P[receiver] > P[server]) { stats.bpChances[receiver]++; if (winner === receiver) stats.bpWon[receiver]++; }
+    if (reason === 'ace') stats.aces[server]++;
+    else if (reason === 'doubleFault') stats.doubleFaults[server]++;
+    else if (reason === 'double') stats.winners[hitter]++;
+    else if ((reason === 'out' || reason === 'net') && hitter >= 0) {
+      if (players[hitter].lastShotForced) stats.forced[hitter]++; else stats.unforced[hitter]++;
+    }
+    for (const p of players) {
+      if (Math.abs(p.z) < NET_ZONE) { stats.netPlayed[p.side]++; if (winner === p.side) stats.netWon[p.side]++; }
+    }
   }
 
   function endPoint(winner, reason) {
@@ -513,7 +548,7 @@ export function createGame(options = {}) {
     // every call can be challenged; only close ones can be wrong
     call = {
       serve, truth, called, near, margin: lm.margin, line: lm.line, x: e.x, z: e.z, hitter: ball.lastHitter,
-      at: g.time, snapshot: JSON.stringify(match), challenger: called ? 1 - ball.lastHitter : ball.lastHitter,
+      at: g.time, snapshot: JSON.stringify({ match, stats }), challenger: called ? 1 - ball.lastHitter : ball.lastHitter,
       challenged: false, cpuAt: null,
     };
     if (near && call.challenger === 1 && challenges[1] > 0) {
@@ -556,8 +591,9 @@ export function createGame(options = {}) {
     const c = call, side = c.challenger;
     const overturned = c.truth !== c.called;
     if (!overturned) challenges[side]--;
+    const countChallenge = () => { stats.challenges[side]++; if (overturned) stats.challengesWon[side]++; };
     events.push({ type: 'challengeResult', side, overturned, inside: c.truth, margin: c.margin, line: c.line, left: challenges[side] });
-    const restore = () => Object.assign(match, JSON.parse(c.snapshot));
+    const restore = () => { const o = JSON.parse(c.snapshot); Object.assign(match, o.match); loadStats(stats, o.stats); };
     for (const p of players) setAction(p, 'ready');
     if (!c.called) { // an 'out' that ended the point
       g.state = 'pointOver';
@@ -567,10 +603,12 @@ export function createGame(options = {}) {
         afterPause = 'serve';
         events.push({ type: 'replay', serve: c.serve, serveNumber: match.serveNumber });
       }
+      countChallenge();
       return;
     }
     // a ball called good: if it was out, the challenger wins it; if not, loses the point
     restore();
+    countChallenge();
     ball.isServe = c.serve;
     ball.lastHitter = c.hitter;
     if (overturned && c.serve) serveFault('out');
@@ -595,6 +633,7 @@ export function createGame(options = {}) {
     events.push({ type: 'matchStart' });
     challenges[0] = challenges[1] = CALLS.challenges;
     for (const p of players) p.stamina = 1;
+    resetStats(stats);
     call = null;
     setupServe();
   }
@@ -657,7 +696,10 @@ export function createGame(options = {}) {
   function step(dt, inp) {
     input = inp || NO_INPUT;
     g.time += dt;
-    for (const p of players) updateStamina(p, dt);
+    for (const p of players) {
+      updateStamina(p, dt);
+      if (g.state === 'rally') stats.distance[p.side] += Math.hypot(p.vx, p.vz) * dt;
+    }
     if (g.state === 'review') {
       for (const p of players) drive(p, 0, 0, 0, dt);
       g.timer -= dt;
@@ -789,6 +831,11 @@ async function boot() {
   let matchTime = 0;
   let clockRunning = false;
 
+  const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  const statsData = () => ({
+    names: [shortName(0), shortName(1)], rows: statRows(game.stats),
+    longestRally: game.stats.longestRally, time: clock(matchTime),
+  });
   const showScore = () => {
     const m = game.match;
     hud.setScore({ games: m.games, points: pointLabels(m), server: m.server });
@@ -834,7 +881,7 @@ async function boot() {
     audio.pause();
     const m = game.match;
     const labels = pointLabels(m);
-    hud.showPause(`${me.name} ${m.games[0]} : ${m.games[1]} ${cpu.name}   (${labels[0]} : ${labels[1]})`);
+    hud.showPause(`${me.name} ${m.games[0]} : ${m.games[1]} ${cpu.name}   (${labels[0]} : ${labels[1]})`, statsData());
   }
   function resume() {
     if (!paused) return;
@@ -1011,6 +1058,7 @@ async function boot() {
             headline: won ? 'YOU WIN' : 'YOU LOSE',
             detail: `${me.name} ${e.games[0]} : ${e.games[1]} ${cpu.name}`,
             button: 'Play again',
+            stats: statsData(),
           });
           if (won) audio.react('ovation');
           else audio.react('applause', 1);

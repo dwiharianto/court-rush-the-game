@@ -533,3 +533,34 @@ test('line judge errors and challenges keep the score consistent', () => {
     void replays;
   } finally { Object.assign(CALLS, saved); }
 });
+
+test('match statistics add up', () => {
+  let g = null;
+  const reasons = {};
+  const st = playPoints(createGame, {
+    difficulty: 'normal', profile: 'solid', seed: 31, points: 120,
+    onStep(game) { g = game; },
+    onEvent(e, game) {
+      if (e.type === 'matchStart') for (const k of Object.keys(reasons)) delete reasons[k];
+      if (e.type === 'point') reasons[e.reason] = (reasons[e.reason] || 0) + 1;
+    },
+  });
+  const s = g.stats;
+  const total = Object.values(reasons).reduce((a, b) => a + b, 0);
+  assert.ok(st.points > 0);
+  assert.equal(s.points[0] + s.points[1], total, 'points won add up to points played this match');
+  assert.equal(s.aces[0] + s.aces[1], reasons.ace || 0, 'aces');
+  assert.equal(s.doubleFaults[0] + s.doubleFaults[1], reasons.doubleFault || 0, 'double faults');
+  assert.equal(s.winners[0] + s.winners[1], reasons.double || 0, 'winners');
+  const errors = (reasons.out || 0) + (reasons.net || 0);
+  assert.equal(s.unforced[0] + s.unforced[1] + s.forced[0] + s.forced[1], errors, 'every out or net ball is an error');
+  for (const i of [0, 1]) {
+    assert.ok(s.firstFaults[i] <= s.firstServes[i], 'first serve faults within first serves');
+    assert.ok(s.firstWon[i] <= s.firstServes[i] - s.firstFaults[i]);
+    assert.ok(s.secondWon[i] <= s.secondPlayed[i]);
+    assert.ok(s.bpWon[i] <= s.bpChances[i]);
+    assert.ok(s.distance[i] > 0, 'both players run');
+  }
+  assert.ok(s.fastestServe[0] > 100 && s.fastestServe[1] > 100, 'serve speeds recorded');
+  assert.ok(s.longestRally >= 2);
+});
