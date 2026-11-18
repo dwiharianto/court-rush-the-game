@@ -24,7 +24,7 @@ Customise player, on the start screen, opens a panel with a close-up of your pla
 
 - Move: arrows or WASD. The direction held at contact aims the shot.
 - Space: drive (an overhead smash on a high ball). K: slice. L: lob.
-- Power: hold the shot key to charge (the meter fills in about 0.8 s), release to swing; the swing starts on release, so time the release. A tap plays a normal shot. More power hits up to about 18% faster but spreads the errors (direction, depth, the net), much less so with perfect timing; you move slower while charging. Serve: hold the key through the toss and release at the top for a big serve (pressing twice still works, at normal power). Lobs and drop volleys are touch shots and ignore power.
+- Power: the swing starts when you press, as always, so timing is unchanged. Keep the key down through the swing for more power: a quick tap plays a normal shot, held until contact (about 0.15 s) is full power, shown on the meter. More power hits up to about 18% faster but spreads the errors (direction, depth, the net), much less so with perfect timing. Serve: hold the key through the toss and release at the top for a big serve (pressing twice still works, at normal power). Lobs and drop volleys are touch shots and ignore power.
 - Forehand or backhand (two-handed) is picked from which side the ball arrives on.
 - At the net (inside about 8.5 m), a ball that has not bounced is volleyed. Space volleys, K plays a drop volley.
 - Sliding happens only at the end of a real chase: swinging after running flat out slides into the shot, and braking out of a long sprint slides to a stop. Short moves and reversals stop on your feet.

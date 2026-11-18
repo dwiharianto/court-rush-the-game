@@ -784,8 +784,6 @@ const smooth = (cur, target, rate, dt) => cur + (target - cur) * Math.min(1, dt 
 // at waist height (about 1 m) and 0.75 m to the side.
 const STROKES = new Set(['forehand', 'backhand', 'fhVolley', 'bhVolley']);
 const DIVES = new Set(['diveF', 'diveB']);
-// the upper body, for blending a pose over the legs
-const UPPER_KEYS = POSE_KEYS.filter((k) => !LEG_SET.has(k) && !['hipsRoll', 'groundW', 'clearance'].includes(k));
 function shapeStroke(p, s) {
   const sw = s.swing;
   if (!sw || !STROKES.has(s.action) || sw.contactH === undefined) return;
@@ -813,8 +811,7 @@ export function createCharacter(options = {}) {
   let time = Math.random() * 10;
   let phase = 0, shufflePhase = 0;
   let runBlend = 0, shuffleBlend = 0, slideBlend = 0, legBlend = 0;
-  let gaitU = 0, backU = 0, backBlend = 0, restBlend = 0, prepBlend = 0;
-  const prepPose = makePose();
+  let gaitU = 0, backU = 0, backBlend = 0, restBlend = 0;
   const gw = [0, 0, 0, 0];
   let yaw = 0, yawRate = 0;
   let actionBlend = 0;
@@ -1067,12 +1064,6 @@ export function createCharacter(options = {}) {
     legBlend = smooth(legBlend, clamp(speed / 0.8, 0, 1) * (1 - shuffleBlend), 10, dt);
     for (const key of LEG_KEYS) loco[key] = idle[key] + (run[key] - idle[key]) * legBlend;
     if (shuffleBlend > 0.001) blendPose(loco, loco, shuffle, shuffleBlend);
-    // charging a shot: the racket comes back and the body turns, ready to swing
-    prepBlend = smooth(prepBlend, s.charge && !s.charge.serve && !acting ? 1 : 0, 9, dt);
-    if (prepBlend > 0.001) {
-      sampleClip(CLIPS[s.charge && s.charge.hand < 0 ? 'backhand' : 'forehand'], 0.0, prepPose);
-      for (const key of UPPER_KEYS) loco[key] += (prepPose[key] - loco[key]) * prepBlend * 0.85;
-    }
     if (restBlend > 0.001) {
       copyPose(tmp, HANDS_ON_KNEES);
       tmp.torsoX += 0.05 * Math.sin(time * Math.PI * 2 * 0.7); // heaving breaths

@@ -167,7 +167,7 @@ export function createGame(options = {}) {
   }
 
   function topSpeed(p) {
-    return p.speed * (p.action === 'ready' ? (p.charge ? POWER.chargeMove : 1) : PLAYER.swingMoveFactor) * (1 - STAMINA.speedLoss * tiredness(p));
+    return p.speed * (p.action === 'ready' ? 1 : PLAYER.swingMoveFactor) * (1 - STAMINA.speedLoss * tiredness(p));
   }
 
   function setAction(p, action) {
@@ -448,7 +448,8 @@ export function createGame(options = {}) {
       depth *= 1 - Math.min(SHOT.maxShort, Math.abs(e) * SHOT.shortRate);
     }
     // power: faster, but the errors spread (less so when perfectly timed)
-    const pw = s.power ?? POWER.tap;
+    const pw = s.power ?? (s.holdT !== undefined ? swingPower(s.holdT) : POWER.tap);
+    s.power = pw; // for the meter
     const touch = kind === 'lob' || (volley && kind === 'slice');
     let wild = 0;
     if (!touch) {
@@ -660,6 +661,9 @@ export function createGame(options = {}) {
   // power from how long a shot key was held (a tap is POWER.tap)
   const powerOf = (t) => POWER.tap + (1 - POWER.tap) * Math.max(0, Math.min(1, (t - POWER.minHold) / (POWER.full - POWER.minHold)));
   g.powerOf = powerOf;
+  // power of a groundstroke or volley from how long the key stays down after the press
+  const swingPower = (t) => POWER.tap + (1 - POWER.tap) * Math.max(0, Math.min(1, (t - POWER.swingTap) / (POWER.swingFull - POWER.swingTap)));
+  g.swingPower = swingPower;
 
   function stepHuman(dt) {
     const human = players[0];
@@ -701,18 +705,15 @@ export function createGame(options = {}) {
     if (charge && charge.serve) human.charge = null;
     if (human.action === 'serve') { serveFollow(human, dt); return; }
     if (diving(human)) { human.charge = null; diveMove(human, dt); return; }
-    if (human.charge) {
-      // charging a shot: it is played when the key is let go
-      if (g.state !== 'rally' || human.action !== 'ready') human.charge = null;
-      else if (!held || !held[charge.kind] || charge.t >= POWER.maxHold) {
-        human.charge = null;
-        startSwing(human, charge.kind, null, powerOf(charge.t));
-      }
-    } else if (g.state === 'rally' && human.action === 'ready' && press) {
-      if (held && held[press]) human.charge = { kind: press, t: 0, hand: (ball.x - human.x) * human.right >= 0 ? 1 : -1 };
-      else startSwing(human, press, null, POWER.tap);
+    human.charge = null;
+    // the swing starts on the press, as ever; keeping the key down through the swing
+    // adds power (scripted input holds nothing: a tap)
+    const sw = human.swing;
+    if (sw && !sw.done && sw.holdT !== undefined && held && held[sw.kind === 'smash' ? 'drive' : sw.kind]) sw.holdT += dt;
+    if (g.state === 'rally' && human.action === 'ready' && press) {
+      startSwing(human, press, null, null);
+      if (held && human.swing) human.swing.holdT = 0;
     }
-    if (human.charge) human.charge.hand = (ball.x - human.x) * human.right >= 0 ? 1 : -1;
     if (g.state === 'menu' || g.state === 'matchOver') { drive(human, 0, 0, 0, dt); return; }
     drive(human, input.x, -input.y, topSpeed(human), dt);
   }
@@ -1204,8 +1205,9 @@ async function boot() {
     // the crowd settles as a player gets ready to serve and stays quiet through the rally
     const st = game.state;
     audio.setCrowd(st === 'serveReady' || st === 'toss' || st === 'rally' ? 'hush' : 'chatter');
-    const ch = game.players[0].charge;
-    const pw = ch ? game.powerOf(ch.t) : null;
+    const me0 = game.players[0], ch = me0.charge, sw0 = me0.swing;
+    const pw = ch ? game.powerOf(ch.t)
+      : sw0 && sw0.holdT !== undefined ? (sw0.done ? sw0.power ?? null : game.swingPower(sw0.holdT)) : null;
     if (pw !== shownPower) { shownPower = pw; hud.setPower(pw); }
     const sa = game.players[0].stamina, sb = game.players[1].stamina;
     if (Math.abs(sa - shownStamina[0]) > 0.005 || Math.abs(sb - shownStamina[1]) > 0.005) { shownStamina = [sa, sb]; hud.setStamina(sa, sb); }
