@@ -183,7 +183,7 @@ export const ANIM = {
   strideBase: 1.0, // stride length per cycle at walking pace; grows with speed
   shuffleMax: 3.2, // below this speed a sideways move is a side shuffle facing the net
   shuffleStride: 1.1,
-  footPlant: true, // feet stay planted on the court and step (leg IK); false: legs follow the run cycle
+  footPlant: true, plantRunFrom: 2.2, plantRunTo: 3.6, // feet stay planted on the court and step (leg IK); false: legs follow the run cycle
   entryBlend: 0.07, // seconds to blend from the current pose into a new stroke or serve
   springFreq: 26, // rad/s, smoothing springs on the body (higher is tighter)
   splitTime: 0.34, // split step duration: starts as the opponent swings, lands about as the ball is struck

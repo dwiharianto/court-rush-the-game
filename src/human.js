@@ -644,7 +644,7 @@ export function createCharacter(options = {}) {
   let time = Math.random() * 10;
   let phase = 0, shufflePhase = 0;
   let runBlend = 0, shuffleBlend = 0, slideBlend = 0;
-  let yaw = 0;
+  let yaw = 0, yawRate = 0;
   let actionBlend = 0;
   let held = null;
   let lastFwd = 0, lastSide = 0, accFwd = 0, accSide = 0;
@@ -677,8 +677,13 @@ export function createCharacter(options = {}) {
     const th = s.facing + yaw + loco.hipsYaw;
     const width = L.hipX + 0.02 + 0.07 * (1 - k); // a wider base standing, narrower running
     if (!feetReady) { feet.forEach((f, i) => { home(s, th, i, width, f); f.t = -1; }); feetReady = true; }
-    ikW = smooth(ikW, sliding || held || !ANIM.footPlant ? 0 : 1, 10, dt);
-    if (ikW < 0.5) { feet.forEach((f, i) => { home(s, th, i, width, f); f.t = -1; }); }
+    // planting suits standing, adjusting steps and walking; a real run keeps its
+    // natural stride (knee fold, kick-back, a moment in the air)
+    const runFade = 1 - clamp((speed - ANIM.plantRunFrom) / (ANIM.plantRunTo - ANIM.plantRunFrom), 0, 1);
+    // turning on the spot: the feet step round with the body instead of staying put and crossing
+    const turnFade = 1 - clamp((Math.abs(yawRate) - 1.2) / 1.8, 0, 1);
+    ikW = smooth(ikW, sliding || held || !ANIM.footPlant ? 0 : Math.min(runFade, turnFade), 12, dt);
+    if (ikW < 0.05) { feet.forEach((f, i) => { home(s, th, i, width, f); f.t = -1; }); }
     const moving = speed > 0.6;
     const gaitPhase = shuffleBlend > 0.5 ? shufflePhase : phase;
     const cycle = (shuffleBlend > 0.5 ? ANIM.shuffleStride : stride) / Math.max(speed, 0.6);
@@ -722,7 +727,9 @@ export function createCharacter(options = {}) {
       const lx = wx * Math.cos(th) - wz * Math.sin(th) - hx;
       const lz = wx * Math.sin(th) + wz * Math.cos(th) - (L.hipZ || 0); // hip joints sit a little forward of the body's centre
       if (f.t < 0) H = Math.min(H, Math.sqrt(Math.max(0.01, reach * reach - lx * lx - lz * lz)));
-      return { lx, lz, lift: f.lift || 0 };
+      // a swinging leg follows its animated fold mid-swing, the IK only near lift-off and landing
+      const w = f.t < 0 ? 1 : 1 - Math.sin(Math.PI * Math.min(1, f.t / f.dur));
+      return { lx, lz, lift: f.lift || 0, w };
     });
     local.forEach(({ lx, lz, lift }, i) => {
       const dy = -(H - lift);
@@ -736,7 +743,8 @@ export function createCharacter(options = {}) {
       const flex = Math.atan2(lz, -dy) + Math.atan2(Ls, A);
       if (i === 0) { ik.lHip = flex; ik.lHipZ = a; ik.lKnee = knee; } else { ik.rHip = flex; ik.rHipZ = a; ik.rKnee = knee; }
     });
-    for (const key of ['lHip', 'lHipZ', 'lKnee', 'rHip', 'rHipZ', 'rKnee']) loco[key] += (ik[key] - loco[key]) * ikW;
+    ['lHip', 'lHipZ', 'lKnee'].forEach((key) => { loco[key] += (ik[key] - loco[key]) * ikW * local[0].w; });
+    ['rHip', 'rHipZ', 'rKnee'].forEach((key) => { loco[key] += (ik[key] - loco[key]) * ikW * local[1].w; });
   }
 
   function update(dt, s) {
@@ -785,7 +793,9 @@ export function createCharacter(options = {}) {
       }
     }
     const rate = acting ? ANIM.turnRate * 1.9 : sliding ? ANIM.turnRate * 1.6 : ANIM.turnRate;
+    const yawBefore = yaw;
     yaw = smooth(yaw, yawTarget, rate, dt);
+    if (dt > 0) yawRate = smooth(yawRate, (yaw - yawBefore) / dt, 20, dt);
     if (yaw > 2 * Math.PI) yaw -= 2 * Math.PI;
     else if (yaw < -2 * Math.PI) yaw += 2 * Math.PI;
     const look = clamp(yaw, -1.75, 1.75); // how far the head and shoulders can follow
@@ -902,7 +912,7 @@ export function createCharacter(options = {}) {
     for (const key of POSE_KEYS) {
       if (acting && !LEG_SET.has(key)) { springV[key] = 0; spring[key] = out[key]; continue; } // strokes stay exact above the hips
       // planted feet: the legs come from the foot IK, already smooth; a lag would drag the feet
-      if (!acting && ikW > 0.5 && (LEG_SET.has(key) || key === 'hipsYaw')) { springV[key] = 0; spring[key] = out[key]; continue; }
+      if (!acting && ikW > 0.05 && (LEG_SET.has(key) || key === 'hipsYaw')) { springV[key] = 0; spring[key] = out[key]; continue; }
       let x = spring[key], v = springV[key];
       for (let n = 0; n < steps; n++) { v += (w * w * (out[key] - x) - 2 * w * v) * h; x += v * h; }
       spring[key] = x; springV[key] = v;

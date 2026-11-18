@@ -13,11 +13,11 @@ for (const plant of [false,true]) {
   const s={x:0,z:12,vx:0,vz:0,facing:Math.PI,action:'ready',actionT:0,slide:false};
   const dt=1/60;let slide=0,n=0,offset=0;const prev=[null,null];const v=new THREE.Vector3();
   for(let i=0;i<60*6;i++){const t=i*dt;
-    const tv = t<1.6?{vx:5.5,vz:0}: t<2.2?{vx:0,vz:0}: t<3.4?{vx:-2.4,vz:0}: t<4.6?{vx:0,vz:-4}:{vx:0,vz:0};
+    const tv = t<1.6?{vx:5.5,vz:0}: t<2.2?{vx:0,vz:0}: t<3.4?{vx:-1.6,vz:0}: t<4.6?{vx:0,vz:-1.5}:{vx:0,vz:0};
     s.vx+= (tv.vx-s.vx)*Math.min(1,dt*8); s.vz+=(tv.vz-s.vz)*Math.min(1,dt*8); s.x+=s.vx*dt; s.z+=s.vz*dt;
     c.update(dt,s); c.object3d.updateMatrixWorld(true);
     [foot,footR].forEach((f,k)=>{f.getWorldPosition(v);const pl=c.feet[k];
-      if(prev[k]&&prev[k].planted&&pl.t<0){slide+=Math.hypot(v.x-prev[k].x,v.z-prev[k].z)/dt;offset+=Math.hypot(v.x-pl.x,v.z-pl.z);n++;}
+      if(prev[k]&&prev[k].planted&&pl.t<0&&Math.hypot(s.vx,s.vz)<2){slide+=Math.hypot(v.x-prev[k].x,v.z-prev[k].z)/dt;offset+=Math.hypot(v.x-pl.x,v.z-pl.z);n++;}
       prev[k]={x:v.x,z:v.z,planted:pl.t<0};});
   }
   out[plant?'planted':'cycle']=`planted feet move ${(slide/n).toFixed(3)} m/s, ${(100*offset/n).toFixed(1)} cm from their spot`;
