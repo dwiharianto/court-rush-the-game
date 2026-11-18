@@ -84,19 +84,19 @@ export const SURFACES = {
   clay: {
     label: 'Clay', court: '#b9573a', floor: '#2a2d32',
     bounce: 0.74, sliceBounce: 0.6, friction: 0.8, // vertical and horizontal speed kept on a bounce
-    slideDecel: 12, slideChase: 0.45, slideSprint: 1.0, // m/s^2, and seconds of chasing before a slide
+    slideDecel: 12, slideChase: 0.45, slideSprint: 0.75, // m/s^2, and seconds of chasing before a slide
     marks: true, // bounce marks, slide trails and dust
   },
   grass: {
     label: 'Grass', court: '#5f8f3a', floor: '#557f34',
     bounce: 0.64, sliceBounce: 0.5, friction: 0.9,
-    slideDecel: 17, slideChase: 0.6, slideSprint: 1.3,
+    slideDecel: 17, slideChase: 0.5, slideSprint: 0.9,
     marks: false,
   },
   hard: {
     label: 'Hard court', court: '#2f5d93', floor: '#36624e',
     bounce: 0.7, sliceBounce: 0.56, friction: 0.85,
-    slideDecel: 22, slideChase: 0.6, slideSprint: 1.3, // short skids only
+    slideDecel: 22, slideChase: 0.5, slideSprint: 0.9, // short skids only
     marks: false,
   },
 };
@@ -133,7 +133,7 @@ export const PLAYER = {
   maxX: 8.6,
   // Sliding happens only at the end of a real chase: running near top speed for a while,
   // then swinging at the ball, or braking hard out of a long sprint. Normal stops are quick.
-  chaseSpeed: 0.8, // fraction of top speed that counts as chasing
+  chaseSpeed: 0.7, // fraction of top speed that counts as chasing
   slideTrigger: 0.3, // braking: wanted speed along the run below this fraction of speed
   slideReverseLimit: 0.3, // wanting to go back the other way: plant and push off, no slide
   // the slide's deceleration and the chase times come from the court: see SURFACES
