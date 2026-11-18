@@ -19,18 +19,22 @@
 //   rWristX/Y/Z      racket orientation relative to the forearm
 //   lGrip            0..1, how far the left hand moves onto the racket handle
 //                    (two-handed backhand, volley preparation); solved by IK
+//   rkX/Y/Z, rkW     racket direction in the chest's frame, and how far to turn the
+//                    hand to it (captured strokes; 0 leaves the racket to the wrist keys)
 //   lift             extra hip height (jumps, idle bounce)
 //   hipY             explicit hip height, used when plant is false (seated)
 import * as THREE from 'three';
-import { BODY, ANIM, SERVE_ANIM, SWING } from './config.js';
+import { BODY, ANIM, SERVE_ANIM, SWING, SERVE as SERVE_CFG } from './config.js';
 import { createBodyRig } from './rig.js';
 import MOCAP from './assets/mocap.js';
+import CAPTURE from './assets/strokes.js';
 
 const POSE_KEYS = [
   'lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle', 'hipsYaw',
   'torsoX', 'torsoY', 'torsoZ', 'headX', 'headY',
   'lShX', 'rShX', 'lShZ', 'rShZ', 'lShY', 'rShY', 'lElbow', 'rElbow',
   'rWristX', 'rWristY', 'rWristZ', 'lGrip', 'lift', 'hipY',
+  'rkX', 'rkY', 'rkZ', 'rkW',
 ];
 
 export function makePose(values = {}) {
@@ -552,11 +556,32 @@ const SMASH = [
   key(S, {}),
 ];
 
-const CLIPS = {
+const HAND_CLIPS = {
   forehand: FOREHAND, backhand: BACKHAND, fhVolley: FH_VOLLEY, bhVolley: BH_VOLLEY,
   smash: SMASH, toss: TOSS, serve: SERVE,
   serveReady: [{ t: 0, pose: SERVE_STANCE }],
 };
+// Captured strokes (tools/build-strokes.mjs): the body comes from motion capture of
+// club players; the racket's angle in the hand, the left hand's grip on a two-handed
+// backhand and the head's turn toward the ball come from the hand-made clip above.
+const KEEP_FROM_HAND = ['rWristX', 'rWristY', 'rWristZ', 'lGrip', 'headY'];
+function captured(name, hand) {
+  const keys = CAPTURE.clips[name];
+  if (!keys) return hand;
+  const legLen = BODY.thigh + BODY.shin;
+  const h = makePose();
+  return keys.map((k) => {
+    sampleClip(hand, k.t, h);
+    const pose = makePose({ ...READY, ...k.pose });
+    pose.lift = k.pose.lift * legLen;
+    for (const key of KEEP_FROM_HAND) pose[key] = h[key];
+    pose.rkW = 1;
+    return { t: k.t, pose };
+  });
+}
+const CAPTURED_CLIPS = Object.fromEntries(Object.entries(HAND_CLIPS).map(([name, clip]) => [name, captured(name, clip)]));
+CAPTURED_CLIPS.serveReady = [CAPTURED_CLIPS.toss[0]];
+const CLIPS = new Proxy({}, { get: (_, name) => (ANIM.capturedStrokes ? CAPTURED_CLIPS : HAND_CLIPS)[name] });
 const NAMED = { ...POSES, ready: READY, trophy: TROPHY, serveStance: SERVE_STANCE };
 
 // Clip sampling: a smooth curve through the key poses (cubic Hermite, tangents from
@@ -663,6 +688,25 @@ function gaitMean(key, w, back) {
   return m + (BACK.mean[key] - m) * back;
 }
 
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const chestQ = new THREE.Quaternion(), spineQ = new THREE.Quaternion(), spineE = new THREE.Euler(), rkDir = new THREE.Vector3();
+const reachLocal = new THREE.Vector3(), reachWorld = new THREE.Vector3();
+// Where the racket head should meet the ball, in the player's frame (x to its left,
+// z toward the net), and how strongly to reach for it now (strongest at contact).
+// Returns 0 when there is nothing to reach for.
+function reachTarget(s, out) {
+  const sw = s.swing;
+  if (s.action === 'serve') {
+    out.set(-SERVE_CFG.tossSide, ANIM.serveReachY, SERVE_CFG.tossFront);
+    return Math.exp(-(((s.actionT - SERVE_ANIM.contact) / 0.08) ** 2));
+  }
+  if (!sw || sw.contactH === undefined || !(STROKES.has(s.action) || s.action === 'smash')) return 0;
+  const fore = s.action === 'forehand' || s.action === 'fhVolley' || s.action === 'smash';
+  const side = s.action === 'smash' ? 0.25 : clamp(sw.contactSide, 0.45, 1.5);
+  out.set(fore ? -side : side, clamp(sw.contactH, 0.3, 3.0), ANIM.reachFront);
+  return ANIM.reachStrength * Math.exp(-(((s.actionT - SWING.ideal) / 0.07) ** 2));
+}
+
 const smooth = (cur, target, rate, dt) => cur + (target - cur) * Math.min(1, dt * rate);
 
 // Strokes shaped to the ball: around contact, a low ball brings deeper knees, more
@@ -681,6 +725,7 @@ function shapeStroke(p, s) {
   p.lKnee += low * 1.3 - high * 0.4; p.rKnee += low * 1.3 - high * 0.4;
   p.lHip += low * 0.65 - high * 0.2; p.rHip += low * 0.65 - high * 0.2;
   p.torsoX += low * 0.45 - high * 0.15;
+  if (ANIM.capturedStrokes) return; // captured strokes: the arm reaches for the ball itself (reachTarget)
   if (fore) { p.rShZ += dh * 0.85; p.rShX += dh * 0.3; } else { p.rShX += dh * 0.55; p.rShZ += dh * 0.25; }
   // reaching: lean toward the ball (right for forehands), straighter arm, wider feet
   p.torsoZ += (fore ? 1 : -1) * reach * 0.4;
@@ -997,6 +1042,21 @@ export function createCharacter(options = {}) {
     rig.setPose(out);
     rig.object3d.position.set(s.x, 0, s.z);
     rig.object3d.rotation.y = s.facing + yaw;
+    if (out.rkW > 0.01 && rig.aimRacket) {
+      // the chest's frame as the rig builds it: body turn, hips, then four spine bones
+      chestQ.setFromAxisAngle(Y_AXIS, s.facing + yaw + out.hipsYaw);
+      spineQ.setFromEuler(spineE.set(out.torsoX / 4, out.torsoY / 4, out.torsoZ / 4));
+      for (let n = 0; n < 4; n++) chestQ.multiply(spineQ);
+      rkDir.set(out.rkX, out.rkY, out.rkZ);
+      if (rkDir.lengthSq() > 1e-4) rig.aimRacket(rkDir.normalize().applyQuaternion(chestQ), out.rkW);
+      // reach: around contact the racket head goes to the ball (the toss for a serve)
+      const reach = reachTarget(s, reachLocal);
+      if (reach > 0.001 && rig.reachRacket) {
+        reachWorld.copy(reachLocal).applyAxisAngle(Y_AXIS, s.facing);
+        reachWorld.x += s.x; reachWorld.z += s.z;
+        rig.reachRacket(reachWorld, reach * out.rkW);
+      }
+    }
     rig.applyGrip(out.lGrip);
   }
 

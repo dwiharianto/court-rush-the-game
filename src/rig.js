@@ -1,6 +1,6 @@
 // A player built on a MakeHuman body (see body.js and tools/build-bodies.mjs),
 // with the same interface as the code-built figure in human.js:
-//   object3d, racket, leftHand, pose, setPose(pose, { plant }), applyGrip(w)
+//   object3d, racket, leftHand, pose, setPose(pose, { plant }), applyGrip(w), aimRacket(dir, w), reachRacket(target, w)
 // so every animation clip and pose keeps working unchanged.
 //
 // How poses map onto the skeleton: the figure's joints rotate about the world's
@@ -416,7 +416,44 @@ export function createBodyRig(body, options = {}) {
   setPose(makePose());
   // leg geometry for the foot planner (human.js): thigh, shin, hip joints' sideways offset
   const legInfo = { thigh: legs.thigh, shin: legs.shin, hipX: Math.abs(prep.head('upperleg01.L').x - prep.head('root').x), hipZ: prep.head('upperleg01.L').z };
-  return { object3d, racket, leftHand, pose: current, setPose, applyGrip, mesh, legs: legInfo };
+  // turns the racket hand so the racket's shaft points along dir (world), blended by w;
+  // the racket keeps its roll from the pose
+  const shaft = new THREE.Vector3(), want = new THREE.Vector3();
+  function aimRacket(dir, w) {
+    if (w <= 0.001) return;
+    object3d.updateMatrixWorld(true);
+    const b = bone('wrist.R');
+    racket.getWorldQuaternion(q1);
+    shaft.set(0, -1, 0).applyQuaternion(q1); // the head is at local -y (buildRacket)
+    q1.setFromUnitVectors(shaft, want.copy(dir).normalize());
+    b.getWorldQuaternion(q2);
+    q1.multiply(q2);
+    b.parent.getWorldQuaternion(q3).invert();
+    q3.multiply(q1);
+    b.quaternion.slerp(q3, Math.min(1, w));
+    b.updateMatrixWorld(true);
+  }
+
+  // swings the racket arm at the shoulder so the racket head moves toward target (world),
+  // blended by w; the arm keeps its shape
+  const sh = new THREE.Vector3(), hd = new THREE.Vector3(), tg = new THREE.Vector3();
+  function reachRacket(target, w) {
+    if (w <= 0.001) return;
+    object3d.updateMatrixWorld(true);
+    const b = bone('upperarm01.R');
+    b.getWorldPosition(sh);
+    hd.set(0, racket.userData.headY, 0).applyMatrix4(racket.matrixWorld).sub(sh).normalize();
+    tg.copy(target).sub(sh).normalize();
+    q1.setFromUnitVectors(hd, tg);
+    b.getWorldQuaternion(q2);
+    q1.multiply(q2);
+    b.parent.getWorldQuaternion(q3).invert();
+    q3.multiply(q1);
+    b.quaternion.slerp(q3, Math.min(1, w));
+    b.updateMatrixWorld(true);
+  }
+
+  return { object3d, racket, leftHand, pose: current, setPose, applyGrip, aimRacket, reachRacket, mesh, legs: legInfo };
 }
 
 // A trainer on each foot: a rounded upper and a sole, sized from the foot itself

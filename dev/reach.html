@@ -1,0 +1,25 @@
+<!doctype html><html><body>
+<script type="module">
+import * as THREE from 'three';
+import { loadBodies, getBody, loadKit, getKit } from '../src/body.js';
+import { createCharacter } from '../src/human.js';
+import { ANIM } from '../src/config.js';
+await loadBodies(); await loadKit();
+// racket head at contact, in the player's frame (x to its left, y up, z toward the net)
+const out = {};
+for (const captured of [false, true]) {
+  ANIM.capturedStrokes = captured;
+  for (const act of ['forehand', 'backhand', 'fhVolley', 'bhVolley', 'smash', 'serve']) {
+    const c = createCharacter({ body: getBody('male'), kit: getKit('male') });
+    const s = { x: 0, z: 0, vx: 0, vz: 0, facing: 0, action: 'ready', actionT: 0, slide: false, swing: { contactH: 1, contactSide: 0.75 } };
+    const dt = 1 / 120;
+    const seq = act === 'serve' ? [['toss', 0.7], ['serve', 0.18]] : [[act, 0.18]];
+    for (let i = 0; i < 60; i++) c.update(dt, s);
+    for (const [a, d] of seq) { s.action = a; for (let t = 0; t <= d + 1e-9; t += dt) { s.actionT = t; c.update(dt, s); } }
+    c.object3d.updateMatrixWorld(true);
+    const h = c.getRacketHead(new THREE.Vector3());
+    (out[act] = out[act] || {})[captured ? 'captured' : 'hand'] = [h.x, h.y, h.z].map((v) => v.toFixed(2)).join(', ');
+  }
+}
+window.__out = out; window.__done = true;
+</script></body></html>

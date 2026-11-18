@@ -7,6 +7,7 @@ import { ANIM } from '../src/config.js';
 await loadBodies(); await loadKit();
 const q=new URLSearchParams(location.search);
 if(q.get('plant')==='0')ANIM.footPlant=false;
+if(q.get('hand')==='1')ANIM.capturedStrokes=false;
 const r=new THREE.WebGLRenderer({antialias:true});r.setSize(320,400);document.body.appendChild(r.domElement);
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x9aa8b0);
 scene.add(new THREE.HemisphereLight(0xffffff,0x445544,1.6));const dl=new THREE.DirectionalLight(0xffffff,2);dl.position.set(3,6,4);scene.add(dl);
@@ -16,10 +17,11 @@ const c=createCharacter({body:getBody('male'),kit:getKit('male')});scene.add(c.o
 const cam=new THREE.PerspectiveCamera(35,320/400,0.1,100);
 const s={x:0,z:12,vx:0,vz:0,facing:Math.PI,action:'ready',actionT:0,slide:false};
 const vx=+q.get('vx')||0, vz=+q.get('vz')||0, view=q.get('view')||'side';
-let t=0;const dt=1/120;
-window.step=(sec)=>{for(let i=0;i<sec/dt;i++){t+=dt;const on=t<3;s.slide=q.get("slide")==="1"&&t>=3&&Math.hypot(s.vx,s.vz)>0.8;if(s.slide){const sp=Math.hypot(s.vx,s.vz),ns=Math.max(0,sp-12*dt);s.vx*=ns/sp;s.vz*=ns/sp;}else{s.vx+=((on?vx:0)-s.vx)*Math.min(1,dt*6);s.vz+=((on?vz:0)-s.vz)*Math.min(1,dt*6);}s.x+=s.vx*dt;s.z+=s.vz*dt;c.update(dt,s);}
+let t=0;const dt=1/120;const act=q.get('act');const az=+(q.get('az')||0.6);
+window.step=(sec)=>{for(let i=0;i<sec/dt;i++){t+=dt;if(act){const seq=act==='serve'?[['toss',0.7],['serve',0.5]]:[[act,0.5]];let u=t%1.4,k=0;s.action='ready';s.actionT=0;for(const [a,d] of seq){if(u<d){s.action=a;s.actionT=u;break;}u-=d;}s.swing={contactH:s.action==='smash'?2.6:1,contactSide:0.75};c.update(dt,s);continue;}const on=t<3;s.slide=q.get("slide")==="1"&&t>=3&&Math.hypot(s.vx,s.vz)>0.8;if(s.slide){const sp=Math.hypot(s.vx,s.vz),ns=Math.max(0,sp-12*dt);s.vx*=ns/sp;s.vz*=ns/sp;}else{s.vx+=((on?vx:0)-s.vx)*Math.min(1,dt*6);s.vz+=((on?vz:0)-s.vz)*Math.min(1,dt*6);}s.x+=s.vx*dt;s.z+=s.vz*dt;c.update(dt,s);}
  const sp=Math.hypot(s.vx,s.vz)||1;let dx=-s.vz/sp,dz=s.vx/sp;if(!vx&&!vz){dx=1;dz=0;}
  if(view==='front'){dx=s.vx/sp;dz=s.vz/sp;}
+ if(act){dx=Math.sin(Math.PI+az);dz=Math.cos(Math.PI+az);}
  cam.position.set(s.x+dx*5,1.1,s.z+dz*5);cam.lookAt(s.x,0.9,s.z);r.render(scene,cam);return t;};
 window.pose=()=>{const o={};for(const k of ["rShX","rShZ","rElbow","torsoX","torsoY","hipsYaw","lShX","lift"])o[k]=+c.lastPose?.[k]?.toFixed?.(2);return o;};window.__done=true;
 </script></body></html>

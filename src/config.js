@@ -184,6 +184,8 @@ export const ANIM = {
   shuffleMax: 3.2, // below this speed a sideways move is a side shuffle facing the net
   shuffleStride: 1.1,
   footPlant: true, plantRunFrom: 2.2, plantRunTo: 3.6, plantWalkFrom: 0.5, plantWalkTo: 1.0, // planted feet and leg IK: standing, adjusting steps, side shuffles
+  capturedStrokes: true, // strokes and serves from motion capture (false: the hand-made clips)
+  reachStrength: 0.9, reachFront: 0.3, serveReachY: 2.8, // captured strokes: the racket arm reaches for the ball around contact
   gaitStride: 0.8, // captured gaits: distance per cycle, relative to the actor's (in leg lengths)
   entryBlend: 0.07, // seconds to blend from the current pose into a new stroke or serve
   springFreq: 26, // rad/s, smoothing springs on the body (higher is tighter)
