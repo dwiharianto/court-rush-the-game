@@ -157,7 +157,8 @@ export const AUDIO = {
     strike: 1.0, bounce: 0.4, net: 1.2, slide: 0.33,
     chatter: 0.22, hush: 0.05, // stadium bed between points and during play
     applause: 0.82, whistle: 0.2,
-    grunt: 0.5, call: 1.6, // line-call volume relative to the master volume
+    grunt: 0.5, call: 1.6, // line-call volume relative to the master volume (speech fallback)
+    callClip: 1.1, // the recorded calls
     squeak: 0.32,
   },
 };

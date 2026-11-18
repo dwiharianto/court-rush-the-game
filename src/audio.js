@@ -13,7 +13,7 @@ export function createAudio(options = {}) {
   let ctx = null;
   let master = null, sfx = null, crowd = null, verbSend = null;
   let noiseBuf = null, gritBuf = null;
-  const bank = { applauseLong: [], applauseShort: [], whistles: [], ball: {}, grunt: [[], []] };
+  const bank = { applauseLong: [], applauseShort: [], whistles: [], ball: {}, grunt: [[], []], calls: {} };
   let murmurGain = null;
   let crowdMode = 'chatter', swellIn = 0;
   let muted = false, paused = false;
@@ -65,6 +65,7 @@ export function createAudio(options = {}) {
       bank.ball[kind] = [];
       for (let i = 0; i < 6; i++) bank.ball[kind].push(buffer(ballSound(sr, kind, br), sr));
     }
+    loadCalls();
     // each player has their own voice: six effort grunts apiece
     const gr = makeRng(33);
     AUDIO.gruntPitch.forEach((f0, side) => {
@@ -204,10 +205,43 @@ export function createAudio(options = {}) {
     pickVoice();
     speech.addEventListener?.('voiceschanged', pickVoice);
   }
+  // Calls are recorded clips (tools/build-calls.py), loaded once audio starts; the
+  // browser's speech voice is only a fallback for anything without a clip.
+  const CALL_CLIPS = { 'Out!': 'out', 'Fault!': 'fault', 'Let!': 'let', 'Correction!': 'correction' };
+  function loadCalls() {
+    import('./assets/calls.js').then(({ default: data }) => {
+      for (const [name, list] of Object.entries(data.clips)) {
+        bank.calls[name] = list.map((b64) => {
+          const bin = atob(b64);
+          const n = bin.length >> 1;
+          const buf = ctx.createBuffer(1, n, data.sampleRate);
+          const ch = buf.getChannelData(0);
+          for (let i = 0; i < n; i++) {
+            let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
+            if (v > 32767) v -= 65536;
+            ch[i] = v / 32768;
+          }
+          return buf;
+        });
+      }
+    }).catch(() => { /* no clips: the speech voice is used */ });
+  }
   function call(text) {
-    if (!speech || muted || paused) return;
+    if (muted || paused) return;
+    const list = ctx && bank.calls[CALL_CLIPS[text]];
+    if (list && list.length) {
+      const s = ctx.createBufferSource();
+      s.buffer = list[Math.floor(rnd() * list.length)];
+      const g = ctx.createGain();
+      g.gain.value = AUDIO.levels.callClip;
+      s.connect(g).connect(place({ x: 0, z: 0 }));
+      s.start(now() + 0.03);
+      return;
+    }
+    if (!speech) return;
     try {
-      speech.cancel();
+      if (speech.speaking || speech.pending) speech.cancel();
+      speech.resume();
       const u = new SpeechSynthesisUtterance(text);
       if (voice) u.voice = voice;
       u.lang = voice ? voice.lang : 'en-GB';
