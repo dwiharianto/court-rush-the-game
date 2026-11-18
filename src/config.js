@@ -24,14 +24,14 @@ export function netHeightAt(x) {
 export const ARENA = {
   floorWidth: 70,
   floorLength: 90,
-  backWallZ: -18.6,
+  backWallZ: -21.4, // about 9.5 m of run-back behind the far baseline, like a big show court
   backWallHeight: 5.4,
   sideWallX: 9.6,
   sideWallHeight: 1.05,
   standRows: 7,
   standRowDepth: 0.85,
   standRowRise: 0.45,
-  standZMin: -18.2,
+  standZMin: -21.0,
   standZMax: 16,
   seatSpacing: 0.62,
   seatFill: 0.86,
@@ -39,8 +39,8 @@ export const ARENA = {
 
 export const CAMERA = {
   position: [0, 10.8, 29.5],
-  target: [0, 0, 4.2],
-  fov: 28, // vertical, at the base aspect
+  target: [0, 0, 3.1],
+  fov: 29.5, // vertical, at the base aspect
   baseAspect: 16 / 9,
   maxFov: 85,
   near: 1,

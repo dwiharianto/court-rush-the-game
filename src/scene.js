@@ -487,7 +487,7 @@ function buildDressing(scene) {
   // line judges behind the far baseline
   [[-4.7, 0x2a1d14], [1.1, 0x8a6a4a], [4.7, 0x1a1a1a]].forEach(([x, hair]) => {
     place(createFigure({ shirt: 0x1d2b4a, shorts: 0xd8d0bc, trousers: true, hair, shoes: 0xffffff }),
-      x, 0, -17.2, 0, POSES.lineJudge);
+      x, 0, ARENA.backWallZ + 1.25, 0, POSES.lineJudge);
   });
 
   // player benches either side of the umpire chair
@@ -504,8 +504,8 @@ function buildDressing(scene) {
     scene.add(bench);
   }
 
-  // TV camera pit in the far right corner
-  const px = 7.35, pz = -16.7;
+  // TV camera pit in the far right corner, against the back wall
+  const px = 7.9, pz = ARENA.backWallZ + 1.35;
   const pit = new THREE.Group();
   const pitMat = new THREE.MeshStandardMaterial({ color: 0x0e2a47, roughness: 0.8 });
   pit.add(box(2.4, 0.85, 0.1, pitMat, 0, 0.425, 1.0));
