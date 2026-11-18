@@ -9,7 +9,7 @@
 // A, so the arms and legs get one), and a joint rotation E becomes the local
 // rotation  N(parent)^-1 * E * N(bone).
 import * as THREE from 'three';
-import { makePose, copyPose, buildRacket, GRIP_POINT } from './human.js';
+import { makePose, copyPose, buildRacket, GRIP_POINT, THROAT_POINT } from './human.js';
 
 const DOWN = new THREE.Vector3(0, -1, 0);
 const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), v3 = new THREE.Vector3();
@@ -417,12 +417,12 @@ export function createBodyRig(body, options = {}) {
     b.quaternion.slerp(q3, w);
     b.updateMatrixWorld(true);
   };
-  function applyGrip(w) {
+  function applyGrip(w, throat = 0) {
     if (w <= 0.001) return;
     object3d.updateMatrixWorld(true);
     const up = bone('upperarm01.L'), low = bone('lowerarm01.L');
     up.getWorldPosition(ik.s);
-    ik.t.copy(GRIP_POINT).applyMatrix4(racket.matrixWorld);
+    ik.t.copy(GRIP_POINT).lerp(THROAT_POINT, Math.max(0, Math.min(1, throat))).applyMatrix4(racket.matrixWorld);
     ik.d.subVectors(ik.t, ik.s);
     const len = ik.d.length() || 1;
     ik.d.divideScalar(len);

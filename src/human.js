@@ -18,6 +18,7 @@
 //   lShY, rShY       horizontal sweep of a raised arm, positive is forward
 //   lElbow, rElbow   elbow flexion
 //   rWristX/Y/Z      racket orientation relative to the forearm
+//   lThroat          0..1, the left hand on the racket's throat rather than the handle
 //   lGrip            0..1, how far the left hand moves onto the racket handle
 //                    (two-handed backhand, volley preparation); solved by IK
 //   rkX/Y/Z, rkW     racket direction in the chest's frame, and how far to turn the
@@ -38,7 +39,7 @@ const POSE_KEYS = [
   'torsoX', 'torsoY', 'torsoZ', 'headX', 'headY',
   'lShX', 'rShX', 'lShZ', 'rShZ', 'lShY', 'rShY', 'lElbow', 'rElbow',
   'rWristX', 'rWristY', 'rWristZ', 'lGrip', 'lift', 'hipY',
-  'rkX', 'rkY', 'rkZ', 'rkW', 'groundW', 'clearance',
+  'rkX', 'rkY', 'rkZ', 'rkW', 'groundW', 'clearance', 'lThroat',
 ];
 
 export function makePose(values = {}) {
@@ -104,6 +105,7 @@ function lathe(profile, mat, scaleZ = 1, seg = 12, doubleSided = false) {
 
 // where the left hand holds the handle in a two-handed grip, racket space
 export const GRIP_POINT = new THREE.Vector3(0, -0.105, 0);
+export const THROAT_POINT = new THREE.Vector3(0, -0.25, 0); // where the free hand rests in the ready position
 const clampUnit = (v) => Math.max(-1, Math.min(1, v));
 const ik = {
   s: new THREE.Vector3(), t: new THREE.Vector3(), d: new THREE.Vector3(), pole: new THREE.Vector3(),
@@ -441,10 +443,13 @@ const LEG_KEYS = ['lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'lAnkle', 
 const LEG_SET = new Set([...LEG_KEYS, 'hipY']);
 
 const READY = makePose({
-  lHip: 0.5, rHip: 0.5, lKnee: 0.85, rKnee: 0.85, lHipZ: 0.2, rHipZ: 0.2,
-  torsoX: 0.32, headX: -0.22,
-  rShX: 0.4, rShZ: 0.22, rElbow: 1.3, rWristX: -0.55, rWristZ: -0.35,
-  lShX: 0.45, lShZ: 0.2, lElbow: 1.25,
+  // athletic ready position: wide base, knees and hips flexed, chest forward over the
+  // feet, eyes up; the racket in front of the body (the free hand joins it on the
+  // throat while standing, see the idle pose)
+  lHip: 0.62, rHip: 0.62, lKnee: 1.0, rKnee: 1.0, lHipZ: 0.28, rHipZ: 0.28,
+  torsoX: 0.5, headX: -0.42,
+  rShX: 0.55, rShZ: 0.12, rShY: 0.3, rElbow: 1.45, rWristX: -0.3, rWristZ: -0.6,
+  lShX: 0.5, lShZ: 0.15, lShY: 0.4, lElbow: 1.4,
 });
 const key = (t, over, base = READY) => ({ t, pose: makePose({ ...base, ...over }) });
 
@@ -847,7 +852,7 @@ export function createCharacter(options = {}) {
   const tmpH = { x: 0, z: 0 };
   function plantFeet(dt, s, speed, k, stride, sliding) {
     const th = s.facing + yaw + loco.hipsYaw;
-    const width = L.hipX + 0.02 + 0.07 * (1 - k); // a wider base standing, narrower running
+    const width = L.hipX + 0.02 + 0.15 * (1 - k); // feet outside the shoulders standing, narrower running
     if (!feetReady) { feet.forEach((f, i) => { home(s, th, i, width, f); f.t = -1; }); feetReady = true; }
     // planting suits standing, adjusting steps and walking; a real run keeps its
     // natural stride (knee fold, kick-back, a moment in the air)
@@ -982,6 +987,9 @@ export function createCharacter(options = {}) {
 
     // ready stance: light bounce and a slow weight shift
     copyPose(idle, READY);
+    idle.lGrip = 1; idle.lThroat = 1; // both hands on the racket, the free one on the throat
+    // the racket points at the opponent, head up (chest frame: the chest leans forward)
+    idle.rkX = 0.05; idle.rkY = 0.76; idle.rkZ = 0.66; idle.rkW = 1;
     const b = Math.sin(time * Math.PI * 2 * ANIM.idleHz);
     const sway = Math.sin(time * 0.9);
     idle.lKnee += b * 0.07; idle.rKnee += b * 0.07;
@@ -1152,7 +1160,7 @@ export function createCharacter(options = {}) {
         rig.reachRacket(reachWorld, reach * out.rkW);
       }
     }
-    rig.applyGrip(out.lGrip);
+    rig.applyGrip(out.lGrip, out.lThroat);
     if (rig.updateCloth) rig.updateCloth(dt);
   }
 
