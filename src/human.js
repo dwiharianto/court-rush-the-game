@@ -409,6 +409,7 @@ export function createFigure(options = {}) {
     object3d: root,
     racket,
     leftHand: armL.hand,
+    legs: { thigh: B.thigh, shin: B.shin, hipX: B.hipHalfWidth },
     pose: current,
     setPose,
     applyGrip,
@@ -612,6 +613,29 @@ function mirrorLegs(out, pose) {
 
 const smooth = (cur, target, rate, dt) => cur + (target - cur) * Math.min(1, dt * rate);
 
+// Strokes shaped to the ball: around contact, a low ball brings deeper knees, more
+// lean and a lower hitting arm; a high one straighter legs and a higher arm; a wide
+// one a lean toward it, a longer arm and a wider stance. Clips are built for a ball
+// at waist height (about 1 m) and 0.75 m to the side.
+const STROKES = new Set(['forehand', 'backhand', 'fhVolley', 'bhVolley']);
+function shapeStroke(p, s) {
+  const sw = s.swing;
+  if (!sw || !STROKES.has(s.action) || sw.contactH === undefined) return;
+  const w = Math.exp(-(((s.actionT - SWING.ideal) / 0.13) ** 2)); // strongest at contact
+  const dh = clamp(sw.contactH - 1.0, -0.75, 0.75) * w;
+  const reach = clamp(sw.contactSide - 0.75, -0.35, 0.7) * w;
+  const fore = s.action === 'forehand' || s.action === 'fhVolley';
+  const low = Math.max(0, -dh), high = Math.max(0, dh);
+  p.lKnee += low * 1.3 - high * 0.4; p.rKnee += low * 1.3 - high * 0.4;
+  p.lHip += low * 0.65 - high * 0.2; p.rHip += low * 0.65 - high * 0.2;
+  p.torsoX += low * 0.45 - high * 0.15;
+  if (fore) { p.rShZ += dh * 0.85; p.rShX += dh * 0.3; } else { p.rShX += dh * 0.55; p.rShZ += dh * 0.25; }
+  // reaching: lean toward the ball (right for forehands), straighter arm, wider feet
+  p.torsoZ += (fore ? 1 : -1) * reach * 0.4;
+  p.rElbow -= Math.max(0, reach) * 0.5;
+  p.lHipZ += Math.max(0, reach) * 0.18; p.rHipZ += Math.max(0, reach) * 0.18;
+}
+
 export function createCharacter(options = {}) {
   // a MakeHuman body when one is given (see rig.js), else the code-built figure
   const rig = options.body ? createBodyRig(options.body, options) : createFigure({ racket: true, ...options });
@@ -631,6 +655,89 @@ export function createCharacter(options = {}) {
   // on the body (the hitting arm stays exact while swinging, for clean contact)
   const entryFrom = makePose(), last = makePose(), spring = makePose(), springV = makePose();
   let prevAction = 'ready', prevT = 0, entryT = 1, springReady = false;
+
+  const L = rig.legs || { thigh: BODY.thigh, shin: BODY.shin, hipX: BODY.hipHalfWidth };
+  const feet = [0, 1].map(() => ({ x: 0, z: 0, fx: 0, fz: 0, t: -1, dur: 0.2, h: 0.05, c: 0 }));
+  let feetReady = false, ikW = 0;
+  const ik = makePose();
+  const legDropOf = (flex, abduct, knee) => {
+    const cz = Math.cos(abduct), cf = Math.cos(flex);
+    return L.thigh * cz * cf + L.shin * (Math.cos(knee) * cz * cf + Math.sin(knee) * Math.sin(flex));
+  };
+  // where a foot would stand under the hips (world), body yaw th, side 0 left / 1 right
+  const home = (s, th, side, width, out) => {
+    const lx = (side === 0 ? 1 : -1) * width;
+    const lz = L.hipZ || 0;
+    out.x = s.x + lx * Math.cos(th) + lz * Math.sin(th);
+    out.z = s.z - lx * Math.sin(th) + lz * Math.cos(th);
+    return out;
+  };
+  const tmpH = { x: 0, z: 0 };
+  function plantFeet(dt, s, speed, k, stride, sliding) {
+    const th = s.facing + yaw + loco.hipsYaw;
+    const width = L.hipX + 0.02 + 0.07 * (1 - k); // a wider base standing, narrower running
+    if (!feetReady) { feet.forEach((f, i) => { home(s, th, i, width, f); f.t = -1; }); feetReady = true; }
+    ikW = smooth(ikW, sliding || held || !ANIM.footPlant ? 0 : 1, 10, dt);
+    if (ikW < 0.5) { feet.forEach((f, i) => { home(s, th, i, width, f); f.t = -1; }); }
+    const moving = speed > 0.6;
+    const gaitPhase = shuffleBlend > 0.5 ? shufflePhase : phase;
+    const cycle = (shuffleBlend > 0.5 ? ANIM.shuffleStride : stride) / Math.max(speed, 0.6);
+    const swingFrac = 0.5 + 0.15 * k;
+    feet.forEach((f, i) => {
+      const c = (((gaitPhase + Math.PI / 2) / (Math.PI * 2) + i * 0.5) % 1 + 1) % 1;
+      const wrapped = c < f.c - 0.5; // the cycle came round: this foot's swing begins
+      f.c = c;
+      const other = feet[1 - i];
+      if (f.t < 0) {
+        let start = false, dur = 0.2, h = 0.04;
+        if (moving && (wrapped || c < 0.05) && c < swingFrac) { start = true; dur = Math.max(0.12, swingFrac * cycle); h = 0.05 + 0.1 * k; }
+        else if (!moving && other.t < 0) {
+          home(s, th, i, width, tmpH);
+          const err = Math.hypot(f.x - tmpH.x, f.z - tmpH.z);
+          const otherErr = Math.hypot(other.x - home(s, th, 1 - i, width, { x: 0, z: 0 }).x, other.z - home(s, th, 1 - i, width, { x: 0, z: 0 }).z);
+          if (err > 0.15 && err >= otherErr) { start = true; dur = 0.2; h = 0.035; } // a small adjusting step
+        }
+        if (start) { f.fx = f.x; f.fz = f.z; f.t = 0; f.dur = dur; f.h = h; }
+      }
+      f.lift = 0;
+      if (f.t >= 0) {
+        f.t += dt;
+        const u = Math.min(1, f.t / f.dur);
+        // land ahead of the hips by half a stance, where the body will be by then
+        const left = Math.max(0, f.dur - f.t) + (moving ? (1 - swingFrac) * cycle * 0.5 : 0);
+        home({ x: s.x + s.vx * left, z: s.z + s.vz * left }, th, i, width, tmpH);
+        const e = u * u * (3 - 2 * u);
+        f.x = f.fx + (tmpH.x - f.fx) * e;
+        f.z = f.fz + (tmpH.z - f.fz) * e;
+        f.lift = f.h * Math.sin(Math.PI * u);
+        if (u >= 1) f.t = -1;
+      }
+    });
+    // leg IK in the body frame; the hips sit at the animated height, lowered if a planted foot is far
+    let H = Math.max(legDropOf(loco.lHip, loco.lHipZ, loco.lKnee), legDropOf(loco.rHip, loco.rHipZ, loco.rKnee));
+    const reach = 0.985 * (L.thigh + L.shin);
+    const local = feet.map((f, i) => {
+      const hx = (i === 0 ? 1 : -1) * L.hipX;
+      const wx = f.x - s.x, wz = f.z - s.z;
+      const lx = wx * Math.cos(th) - wz * Math.sin(th) - hx;
+      const lz = wx * Math.sin(th) + wz * Math.cos(th) - (L.hipZ || 0); // hip joints sit a little forward of the body's centre
+      if (f.t < 0) H = Math.min(H, Math.sqrt(Math.max(0.01, reach * reach - lx * lx - lz * lz)));
+      return { lx, lz, lift: f.lift || 0 };
+    });
+    local.forEach(({ lx, lz, lift }, i) => {
+      const dy = -(H - lift);
+      const D = Math.min(reach, Math.hypot(lx, dy, lz));
+      const ck = (D * D - L.thigh * L.thigh - L.shin * L.shin) / (2 * L.thigh * L.shin);
+      const knee = Math.acos(Math.max(-1, Math.min(1, ck)));
+      const Lc = L.thigh + L.shin * Math.cos(knee), Ls = L.shin * Math.sin(knee);
+      const out2 = (i === 0 ? lx : -lx) / Math.max(0.05, Lc);
+      const a = Math.asin(Math.max(-0.9, Math.min(0.9, out2)));
+      const A = Lc * Math.cos(a);
+      const flex = Math.atan2(lz, -dy) + Math.atan2(Ls, A);
+      if (i === 0) { ik.lHip = flex; ik.lHipZ = a; ik.lKnee = knee; } else { ik.rHip = flex; ik.rHipZ = a; ik.rKnee = knee; }
+    });
+    for (const key of ['lHip', 'lHipZ', 'lKnee', 'rHip', 'rHipZ', 'rKnee']) loco[key] += (ik[key] - loco[key]) * ikW;
+  }
 
   function update(dt, s) {
     time += dt;
@@ -747,6 +854,10 @@ export function createCharacter(options = {}) {
     blendPose(loco, idle, run, runBlend);
     if (shuffleBlend > 0.001) blendPose(loco, loco, shuffle, shuffleBlend);
 
+    // ---- planted feet: each foot stays fixed on the court while it carries weight,
+    // and steps (in an arc) to where the body will be; the legs reach their feet by IK
+    plantFeet(dt, s, speed, k, stride, sliding);
+
     // slide: lateral and forward flavours, mirrored to the slide side
     if (slideBlend > 0.001) {
       blendPose(tmp, SLIDE_FWD, SLIDE_SIDE, slideLateral);
@@ -763,6 +874,7 @@ export function createCharacter(options = {}) {
       copyPose(out, NAMED[held] || READY);
     } else if (acting) {
       sampleClip(CLIPS[s.action], s.actionT, clip);
+      shapeStroke(clip, s);
       actionBlend = 1;
       copyPose(out, clip);
       // legs keep running, or sliding, if the player swings on the move
@@ -789,6 +901,8 @@ export function createCharacter(options = {}) {
     const h = dt / steps;
     for (const key of POSE_KEYS) {
       if (acting && !LEG_SET.has(key)) { springV[key] = 0; spring[key] = out[key]; continue; } // strokes stay exact above the hips
+      // planted feet: the legs come from the foot IK, already smooth; a lag would drag the feet
+      if (!acting && ikW > 0.5 && (LEG_SET.has(key) || key === 'hipsYaw')) { springV[key] = 0; spring[key] = out[key]; continue; }
       let x = spring[key], v = springV[key];
       for (let n = 0; n < steps; n++) { v += (w * w * (out[key] - x) - 2 * w * v) * h; x += v * h; }
       spring[key] = x; springV[key] = v;
@@ -807,6 +921,7 @@ export function createCharacter(options = {}) {
     setPose(name) { held = name; },
     update,
     splitStep() { splitT = 0; },
+    feet, // the foot planner's state (for checks)
     // world position of the racket head centre (for effects)
     getRacketHead(target) {
       headLocal.set(0, rig.racket.userData.headY, 0);

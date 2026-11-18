@@ -1,6 +1,6 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
-import { AI, AUDIO, BALL, CONTACT, COURT, DEFAULT_SURFACE, NAMES, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
+import { AI, AUDIO, BALL, CONTACT, COURT, DEFAULT_SURFACE, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
 import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox } from './rules.js';
 import { createAI } from './ai.js';
@@ -230,11 +230,13 @@ export function createGame(options = {}) {
     if (second) speed *= SERVE.secondFactor;
     if (s.kind === 'slice') speed *= SERVE.sliceFactor;
     const from = { x: ball.x, y: Math.max(1, ball.y), z: ball.z };
-    const v = planShot(from, tx, -p.sign * depth, { speed, margin: SERVE.netMargin });
+    const lift = s.kind === 'slice' ? SPIN.serveSlice : second ? SPIN.secondServe : SPIN.serve;
+    const v = planShot(from, tx, -p.sign * depth, { speed, margin: SERVE.netMargin, lift });
     if (e > 0) v.vy -= over * SERVE.lateDrop;
     ball.y = from.y;
     ball.vx = v.vx; ball.vy = v.vy; ball.vz = v.vz;
     ball.spin = s.kind === 'slice' ? 'slice' : 'flat';
+    ball.lift = lift;
     ball.bounces = 0;
     ball.lastHitter = p.side;
     ball.hitId++;
@@ -284,7 +286,9 @@ export function createGame(options = {}) {
     else if (volley) p.action = hand > 0 ? 'fhVolley' : 'bhVolley';
     else p.action = hand > 0 ? 'forehand' : 'backhand';
     p.actionT = 0;
-    p.swing = { kind: smash ? 'smash' : kind, hand, plan, volley, done: false };
+    // where the ball should be at contact, for the animation to shape the stroke
+    const contactH = pr ? pr.y : 1.0, contactSide = pr ? Math.abs(bx - p.x) : 0.75;
+    p.swing = { kind: smash ? 'smash' : kind, hand, plan, volley, done: false, contactH, contactSide };
     considerSplit(players[1 - p.side]);
     // swinging at the end of a long chase slides into the shot
     if (!p.slide && !smash && p.chaseT >= court.slideChase) startSlide(p);
@@ -293,17 +297,21 @@ export function createGame(options = {}) {
   // risky: this shot flies low enough to clip the tape, or find the net
   function launch(p, tx, tz, kind, speed, volley = false, risky = false) {
     const from = { x: ball.x, y: Math.max(SHOT.minContactHeight, ball.y), z: ball.z };
+    // spin by shot: drives are topspin, slices and drop shots backspin, smashes flat
+    const lift = kind === 'lob' ? SPIN.lob : kind === 'smash' ? SPIN.smash : kind === 'slice' ? SPIN.slice
+      : volley ? SPIN.volley : SPIN.drive * (speed >= SHOT.perfectSpeed ? 1.2 : 1);
     let opts;
-    if (kind === 'lob') opts = { time: SHOT.lobTime };
-    else if (kind === 'smash') opts = { speed, margin: SMASH.netMargin };
-    else opts = { speed: kind === 'slice' ? speed * SHOT.sliceFactor : speed };
+    if (kind === 'lob') opts = { time: SHOT.lobTime, lift };
+    else if (kind === 'smash') opts = { speed, margin: SMASH.netMargin, lift };
+    else opts = { speed: kind === 'slice' ? speed * SHOT.sliceFactor : speed, lift };
     const v = planShot(from, tx, tz, opts);
     if (risky && kind !== 'lob' && kind !== 'smash') {
-      lowerOverNet(from, v, SHOT.netRiskLow + rng() * (SHOT.netRiskHigh - SHOT.netRiskLow));
+      lowerOverNet(from, v, SHOT.netRiskLow + rng() * (SHOT.netRiskHigh - SHOT.netRiskLow), lift);
     }
     ball.y = from.y;
     ball.vx = v.vx; ball.vy = v.vy; ball.vz = v.vz;
     ball.spin = kind === 'slice' ? 'slice' : 'flat';
+    ball.lift = lift;
     ball.bounces = 0;
     ball.lastHitter = p.side;
     ball.hitId++;

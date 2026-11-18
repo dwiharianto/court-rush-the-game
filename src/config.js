@@ -183,6 +183,7 @@ export const ANIM = {
   strideBase: 1.0, // stride length per cycle at walking pace; grows with speed
   shuffleMax: 3.2, // below this speed a sideways move is a side shuffle facing the net
   shuffleStride: 1.1,
+  footPlant: true, // feet stay planted on the court and step (leg IK); false: legs follow the run cycle
   entryBlend: 0.07, // seconds to blend from the current pose into a new stroke or serve
   springFreq: 26, // rad/s, smoothing springs on the body (higher is tighter)
   splitTime: 0.34, // split step duration: starts as the opponent swings, lands about as the ball is struck
@@ -200,6 +201,10 @@ export const BALL = {
   visualRadius: 0.05, // drawn a little larger than life (1.5x) so it reads from the broadcast camera
   gravity: 9.8,
   // bounce and friction depend on the court: see SURFACES
+  drag: 0.0185, // air drag per (m/s): 0.5 rho Cd A / m for a tennis ball
+  magnus: 0.0359, // Magnus force per (lift x speed^2): 0.5 rho A / m
+  spinKick: 0.6, // topspin: extra bounce height per unit lift
+  spinGrip: 0.6, // topspin keeps more pace off the bounce, backspin less
   fixedDt: 1 / 120, // game step
   maxSubstep: 1 / 240, // ball integration step
   restSpeed: 0.6, // below this vertical speed the ball rolls instead of bouncing
@@ -207,9 +212,9 @@ export const BALL = {
 };
 
 export const SHOT = {
-  driveSpeed: 20, // horizontal m/s
-  perfectSpeed: 24,
-  sliceFactor: 0.72,
+  driveSpeed: 28, // launch m/s (about 100 km/h); air drag slows it over the court
+  perfectSpeed: 32,
+  sliceFactor: 0.78,
   lobTime: 2.0, // flight time of a lob, seconds
   netMargin: 0.22, // minimum clearance over the net
   flightStretch: 1.06, // flight time multiplier per retry until the net is cleared
@@ -237,16 +242,22 @@ export const CONTACT = {
   reachY: 2.7,
 };
 
+// Spin of each shot, as a lift coefficient (see BALL.magnus): positive is topspin.
+export const SPIN = {
+  drive: 0.17, lob: 0.12, slice: -0.11, volley: -0.04, smash: 0.03,
+  serve: 0.04, secondServe: 0.14, serveSlice: 0.06,
+};
+
 // Volley: a ball taken out of the air by a player inside the volley zone.
 export const VOLLEY = {
   zoneZ: 8.5, // within this distance of the net a ball that has not bounced is volleyed
-  speed: 17, // horizontal m/s
-  perfectSpeed: 21,
+  speed: 23, // launch m/s
+  perfectSpeed: 27,
   aimX: 3.3,
   depthDefault: 8.2,
   depthDeep: 10.2,
   depthShort: 4.6,
-  dropSpeed: 13, // slice on a volley is a drop volley: soft and short
+  dropSpeed: 15, // slice on a volley is a drop volley: soft and short
   dropDepth: 3.0,
   cpuSpeedFactor: 0.85,
 };
@@ -256,8 +267,8 @@ export const SMASH = {
   minHeight: 1.9, // predicted ball height that turns a drive into a smash
   contactMin: 1.5, // below this at contact it is played as a normal drive
   reachY: 3.2,
-  speed: 30, // horizontal m/s
-  perfectSpeed: 35,
+  speed: 38, // launch m/s
+  perfectSpeed: 44,
   netMargin: 0.15,
   aimX: 3.3,
   depthDefault: 7.2,
@@ -284,9 +295,9 @@ export const AI = {
   //   shotSpeed    drive speed, m/s; serveSpeed and serveError (timing spread, seconds)
   //   netRush      chance of following a short-ball attack to the net
   levels: {
-    easy: { speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.33, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 17, serveSpeed: 23, serveError: 0.1, netRush: 0.15 },
-    normal: { speed: 5.6, errorSize: 0.8, errorRate: 0.05, reaction: 0.21, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.09, awayChance: 0.75, shotSpeed: 20, serveSpeed: 27, serveError: 0.075, netRush: 0.25 },
-    hard: { speed: 6.2, errorSize: 0.5, errorRate: 0.03, reaction: 0.11, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.06, awayChance: 0.88, shotSpeed: 23, serveSpeed: 31, serveError: 0.05, netRush: 0.35 },
+    easy: { speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.33, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 23, serveSpeed: 33, serveError: 0.1, netRush: 0.15 },
+    normal: { speed: 5.6, errorSize: 0.8, errorRate: 0.04, reaction: 0.21, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.07, awayChance: 0.75, shotSpeed: 27, serveSpeed: 39, serveError: 0.075, netRush: 0.25 },
+    hard: { speed: 6.2, errorSize: 0.5, errorRate: 0.022, reaction: 0.11, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.045, awayChance: 0.88, shotSpeed: 31, serveSpeed: 45, serveError: 0.05, netRush: 0.35 },
   },
   stretchRun: 6, // metres of running that count as fully stretched
   stretchPaceMin: 19, // incoming ball speed where pace starts to add pressure, m/s
@@ -340,8 +351,8 @@ export const SERVE = {
   tossSide: 0.12, // and toward the hitting side
   retossHeight: 1.15, // an unhit toss falling below this is simply retaken
   perfect: 0.06, // seconds either side of the top of the toss
-  speed: 30,
-  perfectSpeed: 37,
+  speed: 41, // launch m/s (about 148 km/h)
+  perfectSpeed: 47,
   secondFactor: 0.85, // second serve speed multiplier
   secondForgive: 0.6, // second serve timing errors count this much
   sliceFactor: 0.85,

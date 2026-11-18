@@ -414,7 +414,9 @@ export function createBodyRig(body, options = {}) {
   }
 
   setPose(makePose());
-  return { object3d, racket, leftHand, pose: current, setPose, applyGrip, mesh };
+  // leg geometry for the foot planner (human.js): thigh, shin, hip joints' sideways offset
+  const legInfo = { thigh: legs.thigh, shin: legs.shin, hipX: Math.abs(prep.head('upperleg01.L').x - prep.head('root').x), hipZ: prep.head('upperleg01.L').z };
+  return { object3d, racket, leftHand, pose: current, setPose, applyGrip, mesh, legs: legInfo };
 }
 
 // A trainer on each foot: a rounded upper and a sole, sized from the foot itself

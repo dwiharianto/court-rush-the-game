@@ -169,7 +169,7 @@ test('an unhit toss is retaken without a fault', () => {
 // ---------------------------------------------------------------- volleys and backhands
 // Puts the player at (px, pz) and sends a CPU shot from (fromX, -10) toward (tx, tz).
 // Presses `press` when the ball is SWING.ideal seconds from the hitting plane.
-function incoming({ px, pz, fromX = 0, tx, tz, speed = 18, press = 'drive', aimY = 0 }) {
+function incoming({ px, pz, fromX = 0, tx, tz, speed = 26, press = 'drive', aimY = 0 }) {
   const g = createGame({ rng: seededRng(3), firstServer: 1 });
   g.start();
   g.state = 'rally';
