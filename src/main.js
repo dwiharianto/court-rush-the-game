@@ -1082,51 +1082,86 @@ async function boot() {
     audio.play('effort', { side: e.side, power: e.kmh / 140, x: p.x, z: p.z });
   }
 
-  // ---- commentary: picks its moments, with chances, so it does not talk on every point
+  // ---- commentary: a two-person booth. The play-by-play voice calls the moment and
+  // the analyst follows up; they talk between points and fall silent when play
+  // resumes. Each moment has a chance, so it does not talk on every point.
   const say = (cat, chance = 1, delay = 1.0) => (Math.random() < chance ? audio.commentate(cat, { delay }) : false);
+  const talk = (cat, chance = 1, delay = 1.0) => (Math.random() < chance ? (audio.converse(cat, { delay }) || audio.commentate(cat, { delay })) : false);
   const lastHit = [null, null];
-  let lastBounce = null, saidTired = [-1, -1];
+  let lastBounce = null, saidTired = [-1, -1], bpOpen = false, streak = { side: -1, n: 0 }, fillerSaid = false, openPending = false;
   const gamesPlayed = () => game.match.games[0] + game.match.games[1];
+  function openMatch() {
+    const round = matchMode === 'tournament' && tour ? roundName(tour) : null;
+    const surface = game.surface;
+    audio.sequence([round ? `intro.${round}` : 'intro.generic', Math.random() < 0.6 ? `preview.${surface}` : 'preview.generic', 'start'], { delay: 1.0, force: true });
+  }
   // before each point: match point, break point, deuce, a tired player
   function previewPoint() {
     const m = game.match, s = m.server, r = 1 - s, P = m.points, G = m.games, toWin = m.gamesToWin;
     const winsGame = (a) => P[a] >= 3 && P[a] > P[1 - a];
     const winsMatch = (a) => winsGame(a) && G[a] + 1 >= toWin && G[a] + 1 - G[1 - a] >= 2;
+    bpOpen = winsGame(r);
+    fillerSaid = false;
     if (winsMatch(0) || winsMatch(1)) {
       const final = matchMode === 'tournament' && tour && roundName(tour) === 'FINAL';
-      if (say(final ? 'championshipPoint' : 'matchPoint', 0.9, 0.4)) return;
-    } else if (winsGame(r)) { if (say('breakPoint', 0.6, 0.4)) return; }
-    else if (P[0] >= 3 && P[0] === P[1]) { if (say('deuce', 0.35, 0.4)) return; }
+      if (talk(final ? 'championshipPoint' : 'matchPoint', 0.9, 0.4)) return;
+    } else if (bpOpen) { if (talk('breakPoint', 0.6, 0.4)) return; }
+    else if (P[0] >= 3 && P[0] === P[1]) { if (talk('deuce', 0.35, 0.4)) return; }
     for (const side of [0, 1]) {
       if (game.players[side].stamina < 0.3 && saidTired[side] !== gamesPlayed()) {
         saidTired[side] = gamesPlayed();
-        if (say('tired', 0.5, 0.4)) return;
+        if (talk('tired', 0.5, 0.4)) return;
       }
     }
   }
+  // a game just finished: the break, a run of games, or the score
+  function commentGame(e) {
+    streak = streak.side === e.winner ? { side: e.winner, n: streak.n + 1 } : { side: e.winner, n: 1 };
+    if (e.winner !== e.server && talk('break', 0.85)) return true;
+    if (streak.n === 3 && talk('momentum', 0.8)) return true;
+    if (Math.random() < 0.45) {
+      const [a, b] = game.match.games, hi = Math.max(a, b), lo = Math.min(a, b);
+      const names = hi === lo ? [`score.all.${hi}`, 'react.level'] : [`score.${hi}-${lo}`, hi - lo >= 3 ? 'react.big' : 'react.close'];
+      return audio.sequence(names, { delay: 1.1 });
+    }
+    return false;
+  }
   function commentPoint(e) {
     if (e.set) return; // the match is over: matchOver has the last word
-    if (e.game && e.winner !== e.server && say('break', 0.85)) return;
+    if (e.game && commentGame(e)) return;
+    if (bpOpen && e.winner === e.server && !e.game && talk('breakSaved', 0.7)) return;
     const long = e.rallyHits >= 12;
     const hit = e.hitter >= 0 ? lastHit[e.hitter] : null;
     switch (e.reason) {
-      case 'ace': say('ace', 0.8, 0.6); break;
-      case 'doubleFault': say('doubleFault', 0.8); break;
+      case 'ace': talk('ace', 0.6, 0.6); break;
+      case 'doubleFault': talk('doubleFault', 0.6); break;
       case 'double':
-        if (long) say('longRally', 0.9);
-        else if (hit && hit.kind === 'smash') say('smashWinner', 0.7);
-        else if (hit && hit.volley) say('volleyWinner', 0.6);
-        else say('winner', 0.55);
+        if (long) talk('longRally', 0.85);
+        else if (hit && hit.kind === 'smash') talk('smashWinner', 0.6);
+        else if (hit && hit.volley) talk('volleyWinner', 0.5);
+        else talk('winner', 0.4);
         break;
       case 'out': case 'net': {
-        if (long) { say('longRally', 0.85); break; }
+        if (long) { talk('longRally', 0.8); break; }
         let cat = 'netError';
         if (e.reason === 'out' && lastBounce) cat = lineMargin(lastBounce.x, lastBounce.z, 1 - e.hitter).line === 'base' ? 'longError' : 'wideError';
-        if (!say(cat, 0.4)) say('unforced', 0.15);
+        if (!talk(cat, 0.3)) talk('unforced', 0.1);
         break;
       }
       default:
     }
+  }
+  // a quiet spell while a server waits: a little chat
+  function idleChat() {
+    if (openPending && audio.commentaryReady) {
+      openPending = false;
+      // only at the very start; a match already under way just carries on
+      if (gamesPlayed() === 0 && game.match.points[0] + game.match.points[1] === 0) { openMatch(); fillerSaid = true; }
+      return;
+    }
+    if (fillerSaid || audio.commentaryBusy || game.state !== 'serveReady' || game.timer < 3.5) return;
+    fillerSaid = true;
+    if (Math.random() < 0.6) talk(Math.random() < 0.35 ? `filler.${game.surface}` : 'filler', 1, 0.2);
   }
 
   const REASON = { out: 'OUT', net: 'NET', double: 'WINNER', ace: 'ACE', doubleFault: 'DOUBLE FAULT', challenge: 'CALL STANDS' };
@@ -1136,6 +1171,7 @@ async function boot() {
       switch (e.type) {
         case 'hit':
           lastHit[e.side] = e;
+          if (e.kind === 'serve') audio.hush(); // play is on: finish the sentence, then quiet
           if (e.kind === 'serve' && e.kmh >= 185) say('bigServe', 0.3, 0.5);
           world.setSpeed(e.kmh);
           audio.play('strike', {
@@ -1175,7 +1211,7 @@ async function boot() {
           audio.play(e.cord ? 'cord' : 'net', { x: e.x, z: 0 });
           break;
         case 'challenge':
-          say('challenge', 0.7, 0.4);
+          talk('challenge', 0.7, 0.4);
           hud.showMessage('CHALLENGE', shortName(e.side), 1.4);
           hud.showReview({ margin: e.margin, line: e.line, surfaceColor: SURFACES[game.surface].court });
           audio.react('applause', 0.15);
@@ -1188,7 +1224,7 @@ async function boot() {
           hud.setChallenges(game.challenges);
           hud.showMessage(e.overturned ? 'CALL OVERTURNED' : 'CALL STANDS', e.inside ? 'BALL IN' : 'BALL OUT', 1.8);
           if (e.overturned) { audio.call('Correction!'); audio.react('applause', 0.45); }
-          say(e.overturned ? 'overturned' : 'stands', 0.7, 1.2);
+          talk(e.overturned ? 'overturned' : 'stands', 0.7, 1.2);
           break;
         case 'replay':
           showScore();
@@ -1204,8 +1240,8 @@ async function boot() {
           hud.showMessage('LET', e.serveNumber === 1 ? 'FIRST SERVE' : 'SECOND SERVE', 1.2);
           break;
         case 'matchStart':
-          saidTired = [-1, -1];
-          say('matchStart', 1, 1.2);
+          saidTired = [-1, -1]; streak = { side: -1, n: 0 };
+          openPending = true; // the opening, as soon as the voices are ready
           break;
         case 'serveReady':
           showScore();
@@ -1239,7 +1275,7 @@ async function boot() {
         }
         case 'matchOver': {
           clockRunning = false;
-          audio.commentate('matchWon', { delay: 0.8, force: true });
+          audio.converse('matchWon', { delay: 0.8, force: true }) || audio.commentate('matchWon', { delay: 0.8, force: true });
           const won = e.winner === 0;
           hud.hideMessage();
           const score = `${me.name} ${e.games[0]} : ${e.games[1]} ${cpu.name}`;
@@ -1356,6 +1392,7 @@ async function boot() {
     // the crowd settles as a player gets ready to serve and stays quiet through the rally
     const st = game.state;
     audio.setCrowd(st === 'serveReady' || st === 'toss' || st === 'rally' ? 'hush' : 'chatter');
+    idleChat(); // the opening, and a little chat while a server waits
     const ch = game.players[0].charge;
     const pw = ch ? game.powerOf(ch.t) : null;
     if (pw !== shownPower) { shownPower = pw; hud.setPower(pw); }

@@ -223,12 +223,25 @@ export function createAudio(options = {}) {
           })),
         })));
       }
-      comm.lines = lines;
+      const decode = (b64) => {
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return ctx.decodeAudioData(bytes.buffer);
+      };
+      const turn = async (t) => ({ v: t.v, text: t.text, buffer: await decode(t.clip) });
+      const exchanges = {}, pools = {};
+      for (const [cat, seqs] of Object.entries(data.exchanges || {})) exchanges[cat] = await Promise.all(seqs.map((seq) => Promise.all(seq.map(turn))));
+      for (const [name, list] of Object.entries(data.pools || {})) pools[name] = await Promise.all(list.map(turn));
+      // the output first, then everything becomes available at once
       comm.bus = ctx.createGain();
       comm.bus.gain.value = AUDIO.levels.commentary;
       const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 140;
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6500;
       comm.bus.connect(hp).connect(lp).connect(master);
+      comm.exchanges = exchanges;
+      comm.pools = pools;
+      comm.lines = lines;
     }).catch(() => { /* no commentary */ });
   }
   // A line for the moment `cat`, unless one is still playing (or it is switched off).
@@ -250,6 +263,59 @@ export function createAudio(options = {}) {
     comm.busyUntil = at + s.buffer.duration;
     return true;
   }
+
+  // A back-and-forth between the two commentators: the turns play one after the
+  // other with a short, natural gap. Lines not yet started can be dropped (hush).
+  const recent = [];
+  function playTurns(turns, delay, force) {
+    if (!ctx || muted || paused || !comm.enabled || !turns || !turns.length) return false;
+    let at = now() + delay;
+    if (!force && at < comm.busyUntil + 0.6) return false;
+    comm.pending = [];
+    turns.forEach((t, i) => {
+      const s = ctx.createBufferSource();
+      s.buffer = t.buffer;
+      s.connect(comm.bus);
+      s.start(at);
+      comm.pending.push({ s, start: at });
+      at += t.buffer.duration + (i < turns.length - 1 ? 0.22 + rnd() * 0.25 : 0);
+    });
+    comm.busyUntil = at;
+    return true;
+  }
+  // an exchange for the moment `cat` (not one heard recently)
+  function converse(cat, { delay = 0.9, force = false } = {}) {
+    const list = comm.exchanges && comm.exchanges[cat];
+    if (!list || !list.length) return false;
+    const fresh = list.filter((x) => !recent.includes(x));
+    const seq = (fresh.length ? fresh : list)[Math.floor(rnd() * (fresh.length || list.length))];
+    if (!playTurns(seq, delay, force)) return false;
+    recent.push(seq); if (recent.length > 12) recent.shift();
+    return true;
+  }
+  // one line from each named pool, in order (an opening, a score summary)
+  function sequence(names, { delay = 0.9, force = false } = {}) {
+    if (!comm.pools) return false;
+    const turns = [];
+    for (const n of names) {
+      const pool = comm.pools[n];
+      if (pool && pool.length) turns.push(pool[Math.floor(rnd() * pool.length)]);
+    }
+    return playTurns(turns, delay, force);
+  }
+  // play has resumed: finish the sentence being spoken, drop the rest
+  function hush() {
+    if (!comm.pending) return;
+    const t = now();
+    for (const p of comm.pending) {
+      if (p.start > t + 0.05) { try { p.s.stop(); } catch { /* not started */ } }
+      else comm.busyUntil = Math.max(t, p.start + p.s.buffer.duration);
+    }
+    comm.busyUntil = Math.min(comm.busyUntil, Math.max(t, ...comm.pending.filter((p) => p.start <= t + 0.05).map((p) => p.start + p.s.buffer.duration)));
+    comm.pending = null;
+  }
+  const commentaryReady = () => !!(comm.exchanges && comm.enabled);
+  const commentaryBusy = () => !!ctx && now() < comm.busyUntil;
 
   // Calls are recorded clips (tools/build-calls.py), loaded once audio starts; the
   // browser's speech voice is only a fallback for anything without a clip.
@@ -472,7 +538,9 @@ export function createAudio(options = {}) {
     },
     // a spoken line call: 'Out!', 'Fault!', 'Let!'
     call,
-    commentate,
+    commentate, converse, sequence, hush,
+    get commentaryBusy() { return commentaryBusy(); },
+    get commentaryReady() { return commentaryReady(); },
     // commentary on or off
     setCommentary(on) { comm.enabled = !!on; },
     get commentary() { return comm.enabled; },
