@@ -38,3 +38,56 @@ export async function loadBodies() {
 export function getBody(gender) {
   return cache[gender] || cache.male || null;
 }
+
+// ---- the kit: real garments fitted to each body (MakeHuman CC0 assets), see
+// tools/build-bodies.mjs. Listed one by one so the bundler ships each file.
+const KIT_FILES = {
+  male: {
+    outfit: new URL('./assets/kit/male-female_casualsuit02.json', import.meta.url).href,
+    shoes: new URL('./assets/kit/male-shoes05.json', import.meta.url).href,
+    short: new URL('./assets/kit/male-short02.json', import.meta.url).href,
+    long: new URL('./assets/kit/male-ponytail01.json', import.meta.url).href,
+    curly: new URL('./assets/kit/male-afro01.json', import.meta.url).href,
+  },
+  female: {
+    outfit: new URL('./assets/kit/female-female_casualsuit02.json', import.meta.url).href,
+    shoes: new URL('./assets/kit/female-shoes05.json', import.meta.url).href,
+    short: new URL('./assets/kit/female-short02.json', import.meta.url).href,
+    long: new URL('./assets/kit/female-ponytail01.json', import.meta.url).href,
+    curly: new URL('./assets/kit/female-afro01.json', import.meta.url).href,
+  },
+};
+const KIT_TEXTURES = {
+  outfitNormal: new URL('./assets/kit/textures/outfit_female_casualsuit02_normal.jpg', import.meta.url).href,
+  shoes: new URL('./assets/kit/textures/outfit_shoes05.jpg', import.meta.url).href,
+  short: new URL('./assets/kit/textures/hair_short02.png', import.meta.url).href,
+  long: new URL('./assets/kit/textures/hair_ponytail01.png', import.meta.url).href,
+  curly: new URL('./assets/kit/textures/hair_afro01.png', import.meta.url).href,
+};
+const kits = {};
+
+// Fetches the garments for both bodies and their textures once.
+export async function loadKit() {
+  const loader = new THREE.TextureLoader();
+  const textures = {};
+  await Promise.all(Object.entries(KIT_TEXTURES).map(async ([k, url]) => {
+    const t = await loader.loadAsync(url);
+    if (k !== 'outfitNormal') t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    textures[k] = t;
+  }));
+  await Promise.all(Object.entries(KIT_FILES).map(async ([g, files]) => {
+    const kit = { textures };
+    await Promise.all(Object.entries(files).map(async ([k, url]) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`kit ${g} ${k}: ${res.status}`);
+      kit[k] = parseBody(await res.json());
+    }));
+    kits[g] = kit;
+  }));
+  return kits;
+}
+
+export function getKit(gender) {
+  return kits[gender] || null;
+}

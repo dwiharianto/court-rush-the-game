@@ -128,7 +128,7 @@ const DEFAULT_KIT = {
 };
 const SCALP = { none: 0, buzz: 0.003, short: 0.011, long: 0.013, curly: 0.026 };
 
-function paint(body, prep, o) {
+function paint(body, prep, o, dressed = false, hairMesh = false) {
   const { arrays, parts: P } = body;
   const n = arrays.part.length;
   const pos = new Float32Array(arrays.position);
@@ -172,12 +172,18 @@ function paint(body, prep, o) {
         break;
       case P.foot:
         c.copy(t < 0.16 ? sole : shoes);
-        for (let k = 0; k < 3; k++) pos[i * 3 + k] = prep.shoe[i * 3 + k];
+        if (!dressed) for (let k = 0; k < 3; k++) pos[i * 3 + k] = prep.shoe[i * 3 + k];
         lift = 0.016;
         break;
       default: c.copy(skin);
     }
     col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    if (dressed && part !== P.scalp) {
+      lift = 0; // the real garments carry the volume and colour; skin shows at the edges
+      if ([P.torso, P.pelvis, P.upperarm, P.forearm, P.thigh, P.shin, P.foot].includes(part)) c.copy(skin);
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    if (hairMesh && part === P.scalp) lift = 0.002;
     if (lift) for (let k = 0; k < 3; k++) pos[i * 3 + k] += prep.normal[i * 3 + k] * lift;
   }
   return { pos, col };
@@ -190,14 +196,36 @@ export function createBodyRig(body, options = {}) {
   const { arrays, bones: B } = body;
   const { N, byName, curl, legs } = prep;
 
-  const { pos, col } = paint(body, prep, o);
+  // real garments (MakeHuman CC0 assets fitted to this body, see body.js) when loaded
+  const kit = o.kit || null;
+  const hairKey = { short: 'short', long: 'long', curly: 'curly' }[o.hairStyle];
+  // under a cap short and curly hair is painted on; a ponytail still shows
+  const hairGarment = kit && hairKey && !(o.headwear === 'cap' && hairKey !== 'long') ? kit[hairKey] : null;
+  const worn = kit ? [kit.outfit, kit.shoes].filter(Boolean) : [];
+  const { pos, col } = paint(body, prep, o, worn.length > 0, !!hairGarment);
+  const hidden = new Set();
+  for (const g of worn) for (const v of g.arrays.hidden) hidden.add(v);
+  let bodyIndex = arrays.index;
+  if (hidden.size) {
+    const keep = [];
+    for (let t = 0; t < bodyIndex.length; t += 3) {
+      const a = bodyIndex[t], b = bodyIndex[t + 1], c = bodyIndex[t + 2];
+      if (hidden.has(a) && hidden.has(b) && hidden.has(c)) continue; // skin under the clothes
+      keep.push(a, b, c);
+    }
+    bodyIndex = keep;
+  }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(Uint16Array.from(arrays.skinIndex), 4));
   geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(Float32Array.from(arrays.skinWeight, (w) => w / 255), 4));
-  geo.setIndex(new THREE.BufferAttribute(new Uint16Array(arrays.index), 1));
-  geo.computeVertexNormals();
+  geo.setIndex(new THREE.BufferAttribute(new Uint16Array(bodyIndex), 1));
+  // normals from the whole body, so the edges where clothes begin stay smooth
+  const full = geo.clone();
+  full.setIndex(new THREE.BufferAttribute(new Uint16Array(arrays.index), 1));
+  full.computeVertexNormals();
+  geo.setAttribute('normal', full.getAttribute('normal'));
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 });
   const mesh = new THREE.SkinnedMesh(geo, mat);
   mesh.castShadow = true;
@@ -218,6 +246,50 @@ export function createBodyRig(body, options = {}) {
 
   const object3d = new THREE.Group();
   object3d.add(mesh);
+
+  // garments: skinned meshes on the same skeleton
+  const skeleton = mesh.skeleton;
+  const garment = (g, material, colourOf) => {
+    const A = g.arrays;
+    const n = A.position.length / 3;
+    const ge = new THREE.BufferGeometry();
+    ge.setAttribute('position', new THREE.BufferAttribute(new Float32Array(A.position), 3));
+    ge.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(A.uv), 2));
+    ge.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(Uint16Array.from(A.skinIndex), 4));
+    ge.setAttribute('skinWeight', new THREE.Float32BufferAttribute(Float32Array.from(A.skinWeight, (w) => w / 255), 4));
+    ge.setIndex(new THREE.BufferAttribute(A.index.constructor === Uint32Array ? new Uint32Array(A.index) : new Uint16Array(A.index), 1));
+    if (colourOf) {
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) colourOf(A.piece[i]).toArray(col, i * 3);
+      ge.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
+    ge.computeVertexNormals();
+    const m = new THREE.SkinnedMesh(ge, material);
+    m.castShadow = true;
+    m.frustumCulled = false;
+    object3d.add(m);
+    m.bind(skeleton, new THREE.Matrix4());
+    return m;
+  };
+  if (kit && kit.outfit) {
+    // T-shirt on top (piece 0), shorts and waistband below, in the player's colours;
+    // the normal map keeps the fabric's folds, seams and hems
+    const shirt = hex(o.shirt), shorts = hex(o.shorts);
+    garment(kit.outfit, new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.88, normalMap: kit.textures.outfitNormal, side: THREE.DoubleSide,
+    }), (piece) => (piece === 0 ? shirt : shorts));
+  }
+  if (kit && kit.shoes) {
+    // trainers in the chosen colour; the socks (top piece) stay white
+    const shoe = hex(o.shoes), sock = hex(o.socks).multiplyScalar(1.45); // the texture is greyish under the socks
+    garment(kit.shoes, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, map: kit.textures.shoes }),
+      (piece) => (piece === 0 ? sock : shoe));
+  }
+  if (hairGarment) {
+    garment(hairGarment, new THREE.MeshStandardMaterial({
+      color: hex(o.hair).multiplyScalar(1.6), map: kit.textures[hairKey], alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.65,
+    }));
+  }
   const bone = (n) => bones[byName[n]];
   const Ninv = N.map((q) => q.clone().invert());
   const parentOf = B.map((b) => b.parent);
@@ -244,8 +316,9 @@ export function createBodyRig(body, options = {}) {
   leftHand.position.copy(fistOffset('L').applyQuaternion(Ninv[byName['wrist.L']]));
   bone('wrist.L').add(leftHand);
 
-  addHeadwear(bone('head'), prep, o);
-  for (const side of ['L', 'R']) addShoe(bone(`foot.${side}`), body, prep, side, o);
+  addHeadwear(bone('head'), prep, o, !!hairGarment);
+  if (!(kit && kit.shoes)) for (const side of ['L', 'R']) addShoe(bone(`foot.${side}`), body, prep, side, o);
+  if (o.wristbands) for (const side of ['L', 'R']) addWristband(bone(`lowerarm01.${side}`), prep, side, o, Ninv[byName[`lowerarm01.${side}`]]);
 
   const current = makePose();
   const legDrop = (flex, abduct, knee) => {
@@ -383,7 +456,20 @@ function addShoe(footBone, body, prep, side, o) {
 }
 
 // cap, headband and ponytail ride on the head bone
-function addHeadwear(headBone, prep, o) {
+// Terry wristband near the wrist, on the forearm bone.
+function addWristband(armBone, prep, side, o, Ninv) {
+  const a = prep.head(`lowerarm01.${side}`), b = prep.head(`wrist.${side}`);
+  const len = a.distanceTo(b);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.034, 0.07, 18, 1, true),
+    new THREE.MeshStandardMaterial({ color: o.headwearColor, roughness: 0.95, side: THREE.DoubleSide }));
+  // at the neutral stance the forearm hangs straight down: the band sits 0.08 m above the wrist
+  band.position.set(0, -(len - 0.065), 0).applyQuaternion(Ninv);
+  band.quaternion.copy(Ninv);
+  band.castShadow = true;
+  armBone.add(band);
+}
+
+function addHeadwear(headBone, prep, o, hairMesh = false) {
   const h = prep.headInfo;
   const origin = prep.head('head');
   const at = (v) => v.clone().sub(origin);
@@ -401,6 +487,17 @@ function addHeadwear(headBone, prep, o) {
     brim.position.copy(c).add(new THREE.Vector3(0, 0.02, (h.front - h.centre.z) - 0.035));
     brim.rotation.x = 0.16;
     for (const m of [crown, brim]) { m.castShadow = true; headBone.add(m); }
+  } else if (o.headwear === 'visor') {
+    // a band round the head and a brim, open on top
+    const band = new THREE.Mesh(new THREE.TorusGeometry(r * 0.99, 0.014, 6, 28), hw);
+    band.rotation.x = Math.PI / 2 - 0.12;
+    band.scale.set(0.9, 1.06, 1.4);
+    band.position.copy(c).add(new THREE.Vector3(0, 0.0, 0.004));
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.006, 20, 1, false, -Math.PI / 2, Math.PI), hw);
+    brim.scale.set(1, 1, 1.15);
+    brim.position.copy(c).add(new THREE.Vector3(0, -0.004, (h.front - h.centre.z) - 0.03));
+    brim.rotation.x = 0.16;
+    for (const m of [band, brim]) { m.castShadow = true; headBone.add(m); }
   } else if (o.headwear === 'headband') {
     const band = new THREE.Mesh(new THREE.TorusGeometry(r * 0.98, 0.012, 8, 28), hw);
     band.rotation.x = Math.PI / 2 - 0.22;
@@ -408,6 +505,7 @@ function addHeadwear(headBone, prep, o) {
     band.position.copy(c).add(new THREE.Vector3(0, 0.022, 0.004));
     headBone.add(band);
   }
+  if (hairMesh) return; // real hair is on
   if (o.hairStyle === 'long') {
     const pts = [[0.012, -0.21], [0.026, -0.15], [0.032, -0.07], [0.024, 0]].map(([x, y]) => new THREE.Vector2(x, y));
     const tail = new THREE.Mesh(new THREE.LatheGeometry(pts, 12), hairMat);

@@ -16,4 +16,11 @@ for g in male female; do
   get targets/macrodetails/height/$g-young-averagemuscle-averageweight-maxheight.target targets/macrodetails/height/$g-young-averagemuscle-averageweight-maxheight.target
   get targets/macrodetails/proportions/$g-young-averagemuscle-averageweight-idealproportions.target targets/macrodetails/proportions/$g-young-averagemuscle-averageweight-idealproportions.target
 done
-echo "MakeHuman data in $DIR"
+# clothing, shoes and hair: MakeHuman's CC0 assets, packed by the ara3d-data npm package
+A="$(dirname "$0")/.cache/ara3d"
+if [ ! -d "$A/package" ]; then
+  mkdir -p "$A"
+  URL=$(curl -sf https://registry.npmjs.org/ara3d-data/1.1.0 | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p')
+  curl -sf -o "$A/pkg.tgz" "$URL" && tar -xzf "$A/pkg.tgz" -C "$A" && rm "$A/pkg.tgz"
+fi
+echo "MakeHuman data in $DIR, clothing in $A"

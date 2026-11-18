@@ -9,12 +9,15 @@
 // with a position along that limb, so the game can paint a tennis kit, hair and
 // skin colours onto it at load time. The skeleton is simplified to the 60 bones
 // the game animates; the rest (face, toes, metacarpals) fold into their parents.
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = join(here, '.cache/makehuman');
+const ARA = join(here, '.cache/ara3d/package/assets');
+const PREVIEW = process.argv.includes('--preview');
 const OUT = join(here, '../src/assets');
 
 // ------------------------------------------------------------------ inputs
@@ -42,6 +45,21 @@ function readTarget(path) {
     out.push([i, x, y, z]);
   }
   return out;
+}
+
+// MakeHuman clothing (CC0), as packed by ara3d-data: MHP1 + header JSON + arrays.
+function readPack(file) {
+  const b = gunzipSync(readFileSync(join(ARA, 'proxies', file)));
+  const n = b.readUInt32LE(4);
+  const h = JSON.parse(b.subarray(8, 8 + n).toString());
+  const base = 8 + n;
+  const T = { Uint32Array, Float32Array, Uint8Array };
+  const arrays = {};
+  for (const a of h.arrays) {
+    const bytes = b.subarray(base + a.offset, base + a.offset + a.length * T[a.type].BYTES_PER_ELEMENT);
+    arrays[a.name] = new T[a.type](new Uint8Array(bytes).buffer);
+  }
+  return { meta: h.meta, arrays };
 }
 
 const skel = JSON.parse(readFileSync(join(SRC, 'default.mhskel'), 'utf8'));
@@ -156,7 +174,7 @@ function build(gender, { muscle, height, targetHeight }) {
     const sum = m.reduce((a, [, w]) => a + w, 0) || 1;
     let left = 255;
     m.forEach(([bi, w], k) => {
-      const q = k === m.length - 1 ? left : Math.round((w / sum) * 255);
+      const q = k === m.length - 1 ? left : Math.floor((w / sum) * 255);
       skinIndex[j * 4 + k] = bi; skinWeight[j * 4 + k] = q; left -= q;
     });
     if (!m.length) { skinIndex[j * 4] = boneIndex.get('root'); skinWeight[j * 4] = 255; }
@@ -187,6 +205,130 @@ function build(gender, { muscle, height, targetHeight }) {
     else if (Math.abs(x) < 0.021 && y < eyeY - 0.066 && y > eyeY - 0.083 && z > frontZ - 0.026) part[j] = PART.lips;
   });
 
+  // ---- garments fitted to this body: positions from three body vertices plus a
+  // scaled offset (MakeHuman's proxy fitting), skin weights blended from the same
+  // vertices, and the body vertices they cover (hidden while worn)
+  const boneW = new Map(); // base vertex -> Map(kept bone -> weight), all vertices
+  for (const [bn, list] of Object.entries(weights)) {
+    const k = boneIndex.get(keptAncestor(bn));
+    for (const [vi, w] of list) {
+      if (!boneW.has(vi)) boneW.set(vi, new Map());
+      const m = boneW.get(vi);
+      m.set(k, (m.get(k) || 0) + w);
+    }
+  }
+  function fitGarment(file) {
+    const { meta, arrays: A } = readPack(file);
+    const nv = meta.vertexCount;
+    const sc = (meta.scale || []).map(([a, b, d], ax) => (d ? Math.abs(V[a][ax] - V[b][ax]) / d : 1));
+    const fitted = [], skin = [];
+    for (let i = 0; i < nv; i++) {
+      const p = [0, 0, 0];
+      const m = new Map();
+      for (let k = 0; k < 3; k++) {
+        const r = A.refs[i * 3 + k], w = A.weights[i * 3 + k];
+        if (!w) continue;
+        for (let c = 0; c < 3; c++) p[c] += V[r][c] * w;
+        // fitting weights can be negative (extrapolation); skinning blends only the positive part
+        for (const [bi, bw] of boneW.get(r) || []) m.set(bi, (m.get(bi) || 0) + bw * Math.max(0, w));
+      }
+      for (let c = 0; c < 3; c++) p[c] += A.offsets[i * 3 + c] * (sc[c] ?? 1);
+      fitted.push(tx(p));
+      skin.push([...m.entries()].filter(([, w]) => w > 1e-6).sort((a, b) => b[1] - a[1]).slice(0, 4));
+    }
+    // split vertices where the texture coordinates differ (three.js needs one uv per vertex)
+    const key = new Map(), outPos = [], outUv = [], outSkin = [], tri = [];
+    let f = 0;
+    for (let face = 0; face < A.faceSizes.length; face++) {
+      const size = A.faceSizes[face];
+      const ids = [];
+      for (let k = 0; k < size; k++) {
+        const v = A.faceVerts[f + k], u = A.faceUVs[f + k];
+        const kk = v * 65536 + u;
+        if (!key.has(kk)) {
+          key.set(kk, outPos.length);
+          outPos.push(fitted[v]); outUv.push([A.uvs[u * 2], A.uvs[u * 2 + 1]]); outSkin.push(skin[v]);
+        }
+        ids.push(key.get(kk));
+      }
+      for (let k = 1; k + 1 < size; k++) tri.push(ids[0], ids[k], ids[k + 1]);
+      f += size;
+    }
+    const n2 = outPos.length;
+    const position = new Float32Array(n2 * 3), uv = new Float32Array(n2 * 2);
+    const si = new Uint8Array(n2 * 4), sw = new Uint8Array(n2 * 4);
+    outPos.forEach((p, i) => position.set(p, i * 3));
+    outUv.forEach((t, i) => uv.set(t, i * 2));
+    outSkin.forEach((m, i) => {
+      const sum = m.reduce((a, [, w]) => a + w, 0) || 1;
+      let left = 255;
+      m.forEach(([bi, w], k) => { const q = k === m.length - 1 ? left : Math.floor((w / sum) * 255); si[i * 4 + k] = bi; sw[i * 4 + k] = q; left -= q; });
+      if (!m.length) { si[i * 4] = 0; sw[i * 4] = 255; }
+    });
+    const hidden = [];
+    for (const d of A.deleteVerts) if (used.has(d)) hidden.push(used.get(d));
+    // pieces: the separate shells of a garment (shirt and shorts, shoe and sock),
+    // numbered from the highest down: 0 is the topmost shell
+    const par = Array.from({ length: n2 }, (_, i) => i);
+    const find = (x) => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+    const weld = new Map();
+    for (let i = 0; i < n2; i++) {
+      const k = outPos[i].map((v) => v.toFixed(4)).join();
+      if (weld.has(k)) par[find(i)] = find(weld.get(k)); else weld.set(k, i);
+    }
+    for (let t = 0; t < tri.length; t += 3) { const a = find(tri[t]); par[find(tri[t + 1])] = a; par[find(tri[t + 2])] = a; }
+    const comps = new Map();
+    for (let i = 0; i < n2; i++) {
+      const r = find(i);
+      if (!comps.has(r)) comps.set(r, { sum: 0, n: 0 });
+      const c = comps.get(r); c.sum += outPos[i][1]; c.n++;
+    }
+    const levels = [...new Set([...comps.values()].map((c) => +(c.sum / c.n).toFixed(1)))].sort((a, b) => b - a);
+    const piece = new Uint8Array(n2);
+    for (let i = 0; i < n2; i++) { const c = comps.get(find(i)); piece[i] = levels.indexOf(+(c.sum / c.n).toFixed(1)); }
+    return {
+      meta, arrays: {
+        position, uv, skinIndex: si, skinWeight: sw,
+        index: n2 > 65535 ? new Uint32Array(tri) : new Uint16Array(tri), hidden: new Uint16Array(hidden), piece,
+      },
+    };
+  }
+  const packJson = (header, arrays) => {
+    let off = 0;
+    const chunks = [];
+    header.arrays = {};
+    for (const [name, arr] of Object.entries(arrays)) {
+      off += (4 - (off % 4)) % 4;
+      chunks.push([off, arr]);
+      header.arrays[name] = { type: arr.constructor.name, offset: off, length: arr.length };
+      off += arr.byteLength;
+    }
+    const blob = Buffer.alloc(off);
+    for (const [at, arr] of chunks) Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).copy(blob, at);
+    header.data = blob.toString('base64');
+    return Buffer.from(JSON.stringify(header));
+  };
+  const list = PREVIEW ? JSON.parse(readFileSync(join(ARA, 'catalog.json'))) : null;
+  const wanted = PREVIEW
+    ? [...list.outfits, ...list.shoes, ...list.hair].map((it) => it.id)
+    : GARMENTS[gender];
+  const gdir = PREVIEW ? join(here, '../dev/preview') : join(OUT, 'kit');
+  mkdirSync(join(gdir, 'textures'), { recursive: true });
+  const catalog = JSON.parse(readFileSync(join(ARA, 'catalog.json')));
+  const all = [...catalog.outfits, ...catalog.shoes, ...catalog.hair, ...catalog.hats];
+  for (const id of wanted) {
+    const item = all.find((it) => it.id === id);
+    const kind = catalog.outfits.includes(item) ? 'outfit' : catalog.shoes.includes(item) ? 'shoes' : catalog.hair.includes(item) ? 'hair' : 'hats';
+    const file = `${kind}_${id}.pack`;
+    const g = fitGarment(file);
+    const mat = item.material;
+    for (const t of [mat.diffuse, mat.normal]) if (t && existsSync(join(ARA, 'textures', t))) copyFileSync(join(ARA, 'textures', t), join(gdir, 'textures', t));
+    const out = packJson({ format: 'court-rush-garment', id, kind, gender, material: mat,
+      licence: 'MakeHuman asset (CC0 1.0), makehumancommunity.org' }, g.arrays);
+    writeFileSync(join(gdir, `${gender}-${id}.json`), out);
+  }
+  console.log(`${wanted.length} garments fitted to the ${gender} body into ${gdir}`);
+
   const index = new Uint16Array(tris.flat());
   const arrays = { position, index, skinIndex, skinWeight, part, along };
   const header = {
@@ -214,6 +356,12 @@ function build(gender, { muscle, height, targetHeight }) {
   for (const p of part) counts[p] = (counts[p] || 0) + 1;
   console.log(`body-${gender}.json: ${n} vertices, ${tris.length} triangles, ${bones.length} bones, ${(out.length / 1024).toFixed(0)} KB, parts`, counts);
 }
+
+// the pieces each build ships with (src/assets/kit): see README for the list
+// T-shirt and shorts (MakeHuman's female_casualsuit02 cut, recoloured in game), trainers
+// with socks (shoes05), and three real hair meshes
+const KIT = ['female_casualsuit02', 'shoes05', 'short02', 'ponytail01', 'afro01'];
+const GARMENTS = { male: KIT, female: KIT };
 
 build('male', { muscle: 0.4, height: 0.3, targetHeight: 1.86 });
 build('female', { muscle: 0.3, height: 0.2, targetHeight: 1.74 });

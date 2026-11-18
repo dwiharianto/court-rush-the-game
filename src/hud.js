@@ -1,6 +1,6 @@
 // HTML overlay: scoreboard, centre message, timing label.
 import { NAMES } from './config.js';
-import { PALETTE, BUILDS, HAIR_STYLES, HEADWEAR, cleanName } from './profile.js';
+import { PALETTE, BUILDS, HAIR_STYLES, HEADWEAR, WRISTBANDS, cleanName } from './profile.js';
 
 export function createHud(doc = document) {
   const rows = [...doc.querySelectorAll('.sb-row')];
@@ -56,7 +56,7 @@ export function createHud(doc = document) {
   const ROWS = [
     ['build', 'Body', BUILDS],
     ['shirt', 'Shirt', PALETTE.shirt], ['shorts', 'Shorts', PALETTE.shorts], ['shoes', 'Shoes', PALETTE.shoes],
-    ['headwear', 'Headwear', HEADWEAR], ['skin', 'Skin tone', PALETTE.skin], ['hair', 'Hair colour', PALETTE.hair],
+    ['headwear', 'Headwear', HEADWEAR], ['wristbands', 'Wrists', WRISTBANDS], ['skin', 'Skin tone', PALETTE.skin], ['hair', 'Hair colour', PALETTE.hair],
     ['hairStyle', 'Hair', HAIR_STYLES],
   ];
   const rowButtons = {};

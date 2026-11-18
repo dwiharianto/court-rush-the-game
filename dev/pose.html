@@ -1,18 +1,18 @@
 <!doctype html><html><body style="margin:0;background:#334">
 <script type="module">
 import * as THREE from 'three';
-import { loadBodies, getBody } from '../src/body.js';
+import { loadBodies, getBody, loadKit, getKit } from '../src/body.js';
 import { createCharacter } from '../src/human.js';
 const W=1400,H=700;const r=new THREE.WebGLRenderer({antialias:true});r.setSize(W,H);r.shadowMap.enabled=true;document.body.appendChild(r.domElement);
 const sc=new THREE.Scene();sc.background=new THREE.Color(0x56708a);
 sc.add(new THREE.HemisphereLight(0xffffff,0x555555,1.4));const d=new THREE.DirectionalLight(0xffffff,2.2);d.position.set(3,6,5);d.castShadow=true;sc.add(d);
 const fl=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshStandardMaterial({color:0xb9573a}));fl.rotation.x=-Math.PI/2;fl.receiveShadow=true;sc.add(fl);
-await loadBodies();
+await loadBodies(); await loadKit();
 const q=new URLSearchParams(location.search);
 const shots=JSON.parse(q.get('s')||'[["ready",0]]');
 const cam=new THREE.PerspectiveCamera(30,(W/shots.length)/H,0.1,100);
 const kit={skin:0x8d5a3b,hair:0x1a1512,hairStyle:q.get('hair')||'short',headwear:q.get('hw')||'none',headwearColor:0xffffff,shirt:0xc23a32,shorts:0x1b1f27,shoes:0xf4f4f4,racketColor:0x16181c};
-const chars=shots.map(([a,t],i)=>{const c=createCharacter({...kit,body:getBody(q.get('g')||'male')});sc.add(c.object3d);c.object3d.position.x=i*3;
+const chars=shots.map(([a,t],i)=>{const c=createCharacter({...kit,wristbands:q.get('wb')!=='0',body:getBody(q.get('g')||'male'),kit:getKit(q.get('g')||'male')});sc.add(c.object3d);c.object3d.position.x=i*3;
  for(let k=0;k<30;k++)c.update(1/30,{x:i*3,z:0,vx:0,vz:0,facing:Number(q.get('face')||0),action:a,actionT:t});return c;});
 r.setScissorTest(true);
 const view=(q.get('view')||'front');

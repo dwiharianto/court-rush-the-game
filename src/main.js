@@ -547,10 +547,15 @@ async function boot() {
   let me = loadProfile();
   let cpu = cpuOpponent(me);
   // MakeHuman bodies (see rig.js); if they cannot load, the code-built figures stand in
-  const { loadBodies, getBody } = await import('./body.js');
-  let bodiesReady = false;
+  const { loadBodies, getBody, loadKit, getKit } = await import('./body.js');
+  let bodiesReady = false, kitReady = false;
   try { await loadBodies(); bodiesReady = true; } catch (err) { console.warn('Player bodies did not load:', err); }
-  const look = (p, racketColor) => ({ ...kitFor(p, racketColor), body: bodiesReady ? getBody(p.build) : null });
+  try { await loadKit(); kitReady = true; } catch (err) { console.warn('Player kit did not load:', err); }
+  const look = (p, racketColor) => ({
+    ...kitFor(p, racketColor),
+    body: bodiesReady ? getBody(p.build) : null,
+    kit: bodiesReady && kitReady ? getKit(p.build) : null,
+  });
   const views = [createCharacter(look(me)), createCharacter(look(cpu, 0xb3261e))];
   world.scene.add(views[0].object3d, views[1].object3d);
   function rebuildView(side, kit) {
