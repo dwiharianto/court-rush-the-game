@@ -486,12 +486,13 @@ export function createGame(options = {}) {
     const near = Math.abs(lm.margin) < CALLS.close;
     let called = truth;
     if (near && rng() < CALLS.missRate * (1 - Math.abs(lm.margin) / CALLS.close)) called = !truth;
-    call = !near ? null : {
-      serve, truth, called, margin: lm.margin, line: lm.line, x: e.x, z: e.z, hitter: ball.lastHitter,
+    // every call can be challenged; only close ones can be wrong
+    call = {
+      serve, truth, called, near, margin: lm.margin, line: lm.line, x: e.x, z: e.z, hitter: ball.lastHitter,
       at: g.time, snapshot: JSON.stringify(match), challenger: called ? 1 - ball.lastHitter : ball.lastHitter,
       challenged: false, cpuAt: null,
     };
-    if (call && call.challenger === 1 && challenges[1] > 0) {
+    if (near && call.challenger === 1 && challenges[1] > 0) {
       // the CPU challenges most wrong calls against it, and the odd correct one
       const wrong = truth !== called;
       if (rng() < (wrong ? CALLS.cpuWrong : CALLS.cpuHopeful)) call.cpuAt = g.time + (called ? 0.35 : 0.8);
@@ -500,7 +501,7 @@ export function createGame(options = {}) {
   }
   // an 'out' call against the human: leave time to challenge it
   function closeOutCall() {
-    if (call && !call.called && call.challenger === 0 && challenges[0] > 0) g.timer = Math.max(g.timer, CALLS.window + 0.6);
+    if (call && call.near && !call.called && call.challenger === 0 && challenges[0] > 0) g.timer = Math.max(g.timer, CALLS.window + 0.6);
   }
   function canChallenge(side) {
     const c = call;
@@ -510,6 +511,15 @@ export function createGame(options = {}) {
     return g.state === 'pointOver';
   }
   g.canChallenge = canChallenge;
+  // why a challenge is not possible now (for the message when one is attempted)
+  function challengeDenied(side) {
+    const c = call;
+    if (challenges[side] <= 0) return 'none left';
+    if (!c || c.challenged || c.challenger !== side) return 'nothing';
+    return 'late';
+  }
+  // a close call the player may want to challenge (the button is shown for these)
+  g.challengeHint = (side) => canChallenge(side) && call.near;
   function challenge(side) {
     call.challenged = true;
     g.state = 'review';
@@ -628,7 +638,10 @@ export function createGame(options = {}) {
       if (g.timer <= 0) resolveChallenge();
       return;
     }
-    if (input.challenge && canChallenge(0)) { challenge(0); return; }
+    if (input.challenge) {
+      if (canChallenge(0)) { challenge(0); return; }
+      events.push({ type: 'challengeDenied', side: 0, reason: challengeDenied(0) });
+    }
     if (call && call.cpuAt !== null && g.time >= call.cpuAt) {
       call.cpuAt = null;
       if (canChallenge(1)) { challenge(1); return; }
@@ -915,6 +928,9 @@ async function boot() {
           hud.showReview({ margin: e.margin, line: e.line, surfaceColor: SURFACES[game.surface].court });
           audio.react('applause', 0.15);
           break;
+        case 'challengeDenied':
+          hud.showCall(e.reason === 'none left' ? 'NO CHALLENGES LEFT' : e.reason === 'late' ? 'TOO LATE TO CHALLENGE' : 'NO CALL TO CHALLENGE');
+          break;
         case 'challengeResult':
           hud.reviewVerdict(e.inside, e.margin);
           hud.setChallenges(game.challenges);
@@ -1060,7 +1076,7 @@ async function boot() {
     // the crowd settles as a player gets ready to serve and stays quiet through the rally
     const st = game.state;
     audio.setCrowd(st === 'serveReady' || st === 'toss' || st === 'rally' ? 'hush' : 'chatter');
-    const canCh = game.canChallenge(0);
+    const canCh = game.challengeHint(0);
     if (canCh !== shownChallenge) { shownChallenge = canCh; hud.setChallengeAvailable(canCh, game.challenges[0]); }
     audio.update(dt);
     world.setClock(matchTime);
