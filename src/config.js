@@ -292,18 +292,16 @@ export const STAMINA = {
   cpuError: 0.06, // extra CPU miss chance at 0 stamina
 };
 
-// Shot power. Groundstrokes and volleys: the swing starts on the press; keeping the key
-// down through the swing adds power (a tap plays at `tap`, held to contact is full).
-// Serves: held through the toss, the serve is charged and struck on release.
-// Power speeds the ball up and spreads the errors (direction, depth, net); perfect
-// timing tames them.
+// Shot power: hold the shot key to charge, release to swing (the swing starts on
+// release). A tap plays at `tap` power; a full charge takes `full` seconds. Power speeds
+// the ball up and spreads the errors (direction, depth, net); perfect timing tames them.
 export const POWER = {
-  tap: 0.35, swingTap: 0.07, swingFull: 0.16, // seconds the key stays down after the press
-  minHold: 0.12, full: 0.6, // serve: seconds held through the toss
+  tap: 0.35, minHold: 0.12, full: 0.8, maxHold: 1.6, // seconds; held past maxHold it swings anyway
   shot: [0.88, 0.3], volley: [0.95, 0.15], serve: [0.86, 0.26], // speed factor = a + b * power
   scatter: 1.3, depthSpread: 1.1, netRisk: 0.12, // at full power, mistimed
   serveScatter: 0.7, serveDepth: 0.5,
   calm: 0.45, // error multiplier with perfect timing
+  chargeMove: 0.72, // movement speed while charging
 };
 
 // Spin of each shot, as a lift coefficient (see BALL.magnus): positive is topspin.
