@@ -22,6 +22,6 @@ window.step=(sec)=>{for(let i=0;i<sec/dt;i++){t+=dt;if(act){const seq=act==="ser
  const sp=Math.hypot(s.vx,s.vz)||1;let dx=-s.vz/sp,dz=s.vx/sp;if(!vx&&!vz){dx=1;dz=0;}
  if(view==='front'){dx=s.vx/sp;dz=s.vz/sp;}
  if(act){dx=Math.sin(Math.PI+az);dz=Math.cos(Math.PI+az);}
- cam.position.set(s.x+dx*5,1.1,s.z+dz*5);cam.lookAt(s.x,0.9,s.z);r.render(scene,cam);return t;};
-window.pose=()=>{const o={};for(const k of ["rShX","rShZ","rElbow","torsoX","torsoY","hipsYaw","lShX","lift"])o[k]=+c.lastPose?.[k]?.toFixed?.(2);return o;};window.__done=true;
+ const D=+(q.get("dist")||5),LY=+(q.get("ly")||0.9);cam.position.set(s.x+dx*D,LY+0.2,s.z+dz*D);cam.lookAt(s.x,LY,s.z);r.render(scene,cam);return t;};
+window.pose=()=>{const o={};for(const k of ["rShX","rShZ","rElbow","torsoX","torsoY","hipsYaw","lShX","lift"])o[k]=+c.lastPose?.[k]?.toFixed?.(2);return o;};window.clothU=()=>{let u=null;c.object3d.traverse(o=>{if(o.material&&o.material.userData&&o.material.userData.cloth)u=o.material.userData.cloth;});return u?`off ${u.uOff.value.toArray().map(v=>(v*100).toFixed(1)).join(",")} cm twist ${u.uTwist.value.toFixed(2)} flutter ${(u.uFlutter.value*1000).toFixed(1)}mm`:"none";};window.__done=true;
 </script></body></html>

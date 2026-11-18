@@ -273,13 +273,16 @@ export function createBodyRig(body, options = {}) {
     m.bind(skeleton, new THREE.Matrix4());
     return m;
   };
+  let cloth = null;
   if (kit && kit.outfit) {
     // T-shirt on top (piece 0), shorts and waistband below, in the player's colours;
     // the normal map keeps the fabric's folds, seams and hems
     const shirt = hex(o.shirt), shorts = hex(o.shorts);
-    garment(kit.outfit, new THREE.MeshStandardMaterial({
+    const material = new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.88, normalMap: kit.textures.outfitNormal, side: THREE.DoubleSide,
-    }), (piece) => (piece === 0 ? shirt : shorts));
+    });
+    const m = garment(kit.outfit, material, (piece) => (piece === 0 ? shirt : shorts));
+    cloth = createCloth(m, kit.outfit.arrays, material);
   }
   if (kit && kit.shoes) {
     // trainers in the chosen colour; the socks (top piece) stay white
@@ -453,7 +456,12 @@ export function createBodyRig(body, options = {}) {
     b.updateMatrixWorld(true);
   }
 
-  return { object3d, racket, leftHand, pose: current, setPose, applyGrip, aimRacket, reachRacket, mesh, legs: legInfo };
+  // secondary motion of the shirt and shorts, after the body has been posed and placed
+  function updateCloth(dt) {
+    if (cloth) cloth.update(dt, object3d, current);
+  }
+
+  return { object3d, racket, leftHand, pose: current, setPose, applyGrip, aimRacket, reachRacket, updateCloth, mesh, legs: legInfo };
 }
 
 // A trainer on each foot: a rounded upper and a sole, sized from the foot itself
@@ -563,3 +571,125 @@ function addHeadwear(headBone, prep, o, hairMesh = false) {
     }
   }
 }
+
+// ---------------------------------------------------------------- cloth
+// Secondary motion for the outfit. The garment stays skinned to the skeleton; on top,
+// in the vertex shader, its loose parts (the shirt below the chest, the sleeves, the
+// legs of the shorts) are weighted from 0 where the fabric sits on the body to 1 at the
+// hems, and those parts:
+//   stand off the body a little (a looser fit),
+//   lag behind the body's movement on a damped spring (inertia, and the wind of running),
+//   twist behind the hips and torso when they turn quickly, then catch up,
+//   ripple with a small flutter that grows with speed.
+// The springs are simulated per player on the CPU and passed in as uniforms.
+const CLOTH = {
+  shirtTop: 1.27, // rest-pose heights (m): the shirt hangs free below this...
+  shirtHem: 1.03,
+  shortsTop: 0.99, // ...and the shorts' legs below this
+  shortsHem: 0.87,
+  sleeveFrom: 0.21, // sideways distance where the sleeves start
+  loose: [0.018, 0.016], // stand-off at the hem: shirt, shorts
+  stiffness: 90, damping: 7, // the hem spring (1/s^2, 1/s)
+  inertia: 0.8, drag: 0.008, // response to the body's acceleration, and to its speed (wind)
+  maxOffset: 0.07,
+  twistStiffness: 110, twistDamping: 12, maxTwist: 0.3,
+  flutter: 0.009, // ripple size (m) at full speed
+};
+
+function createCloth(mesh, A, material) {
+  const n = A.position.length / 3;
+  const attr = new Float32Array(n * 3); // weight, sleeve, shorts
+  const C = CLOTH;
+  for (let i = 0; i < n; i++) {
+    const x = A.position[i * 3], y = A.position[i * 3 + 1];
+    let w = 0, sleeve = 0, shorts = 0;
+    if (A.piece[i] === 0) {
+      if (Math.abs(x) > C.sleeveFrom) sleeve = Math.min(1, (Math.abs(x) - C.sleeveFrom) / 0.12);
+      else w = Math.pow(Math.min(1, Math.max(0, (C.shirtTop - y) / (C.shirtTop - C.shirtHem))), 1.3);
+    } else {
+      shorts = 1;
+      w = Math.min(1, Math.max(0, (C.shortsTop - y) / (C.shortsTop - C.shortsHem)));
+    }
+    attr[i * 3] = w; attr[i * 3 + 1] = sleeve; attr[i * 3 + 2] = shorts;
+  }
+  mesh.geometry.setAttribute('cloth', new THREE.BufferAttribute(attr, 3));
+
+  const uniforms = {
+    uOff: { value: new THREE.Vector3() }, // hem offset, in the player's frame
+    uTwist: { value: 0 },
+    uFlutter: { value: 0 },
+    uTime: { value: 0 },
+    uLoose: { value: new THREE.Vector2(C.loose[0], C.loose[1]) },
+  };
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        attribute vec3 cloth;
+        uniform vec3 uOff; uniform float uTwist; uniform float uFlutter; uniform float uTime; uniform vec2 uLoose;`)
+      .replace('#include <skinning_vertex>', `#include <skinning_vertex>
+        {
+          float w = cloth.x, sleeve = cloth.y, isShorts = cloth.z;
+          vec3 nrm = normalize(objectNormal);
+          // a looser fit toward the hems
+          transformed += nrm * w * mix(uLoose.x, uLoose.y, isShorts);
+          // twist behind the turning body (about its vertical axis), shorts less
+          float tw = uTwist * w * mix(1.0, 0.35, isShorts);
+          float c = cos(tw), s = sin(tw);
+          transformed.xz = vec2(c * transformed.x + s * transformed.z, -s * transformed.x + c * transformed.z);
+          // inertia and wind
+          transformed += uOff * w * mix(1.0, 0.55, isShorts);
+          // flutter: ripples running round the hem and along the sleeves
+          float ph = uTime * 11.0 + transformed.y * 9.0 + atan(transformed.x, transformed.z) * 2.0;
+          transformed += nrm * sin(ph) * uFlutter * (w + 0.6 * sleeve);
+        }`);
+  };
+  material.customProgramCacheKey = () => 'cloth';
+  material.userData.cloth = uniforms; // for checks
+
+  const prev = new THREE.Vector3(), prevV = new THREE.Vector3(), off = new THREE.Vector3(), offV = new THREE.Vector3();
+  const pos = new THREE.Vector3(), vel = new THREE.Vector3(), acc = new THREE.Vector3(), target = new THREE.Vector3();
+  let ready = false, twist = 0, twistV = 0, prevYaw = 0, time = 0;
+  return {
+    update(dt, object3d, pose) {
+      if (dt <= 0) return;
+      time += dt;
+      pos.copy(object3d.position);
+      const yaw = object3d.rotation.y + pose.hipsYaw + 0.5 * pose.torsoY;
+      if (!ready) { prev.copy(pos); prevV.set(0, 0, 0); prevYaw = yaw; ready = true; }
+      vel.subVectors(pos, prev).divideScalar(dt);
+      if (vel.lengthSq() > 400) vel.set(0, 0, 0); // a teleport (new point), not movement
+      acc.subVectors(vel, prevV).divideScalar(dt);
+      if (acc.lengthSq() > 2500) acc.setLength(50);
+      prev.copy(pos); prevV.copy(vel);
+      // the hem: pushed back by the body's acceleration, trailing in the wind of its speed
+      target.copy(vel).multiplyScalar(-C.drag);
+      target.y = Math.abs(target.y) * 0.5 + vel.length() * C.drag * 0.25; // lifts a little in the wind
+      const steps = Math.max(1, Math.ceil(dt / (1 / 120))), h = dt / steps;
+      for (let k = 0; k < steps; k++) {
+        offV.x += (C.stiffness * (target.x - off.x) - C.damping * offV.x - C.inertia * acc.x) * h;
+        offV.y += (C.stiffness * (target.y - off.y) - C.damping * offV.y - C.inertia * 0.4 * acc.y) * h;
+        offV.z += (C.stiffness * (target.z - off.z) - C.damping * offV.z - C.inertia * acc.z) * h;
+        off.addScaledVector(offV, h);
+      }
+      if (off.length() > C.maxOffset) off.setLength(C.maxOffset);
+      // twist: the hem lags the body's turn
+      let dyaw = yaw - prevYaw;
+      dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+      prevYaw = yaw;
+      for (let k = 0; k < steps; k++) {
+        twistV += (-C.twistStiffness * twist - C.twistDamping * twistV) * h;
+        twist += twistV * h;
+      }
+      twist -= dyaw; // the body turned; the cloth stays behind
+      twist = Math.max(-C.maxTwist, Math.min(C.maxTwist, twist));
+      // into the player's frame
+      const u = uniforms.uOff.value.copy(off).applyAxisAngle(UP_AXIS, -object3d.rotation.y);
+      u.y = off.y;
+      uniforms.uTwist.value = twist;
+      uniforms.uFlutter.value = Math.min(1, vel.length() / 6) * C.flutter + Math.min(0.004, Math.abs(twistV) * 0.0006);
+      uniforms.uTime.value = time;
+    },
+  };
+}
+const UP_AXIS = new THREE.Vector3(0, 1, 0);

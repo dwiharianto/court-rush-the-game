@@ -1117,6 +1117,7 @@ export function createCharacter(options = {}) {
       }
     }
     rig.applyGrip(out.lGrip);
+    if (rig.updateCloth) rig.updateCloth(dt);
   }
 
   const headLocal = new THREE.Vector3();
