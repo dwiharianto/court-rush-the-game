@@ -264,6 +264,19 @@ export const DIVE = {
   netRisk: 0.3, // chance it flies low enough to catch the tape
 };
 
+// Line calls and challenges. On a ball this close to a line the line judge can get
+// it wrong, more often the closer it is; a player can challenge with Hawk-Eye.
+export const CALLS = {
+  close: 0.08, // metres either side of the line where a call can be wrong
+  missRate: 0.4, // chance of a wrong call on a ball right on the line edge, falling to 0 at `close`
+  challenges: 3, // unsuccessful challenges allowed per player per match
+  window: 1.4, // seconds after the bounce to challenge
+  reviewTime: 3.2, // the Hawk-Eye review
+  afterReview: 1.3, // pause after the verdict
+  // CPU: how often it challenges a wrong call against it, and a correct close one (hopeful)
+  cpuWrong: 0.7, cpuHopeful: 0.25,
+};
+
 // Spin of each shot, as a lift coefficient (see BALL.magnus): positive is topspin.
 export const SPIN = {
   drive: 0.17, lob: 0.12, slice: -0.11, volley: -0.04, smash: 0.03,

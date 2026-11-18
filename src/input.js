@@ -1,12 +1,12 @@
 // Keyboard and touch input.
 // move(): { x, y } with x right and y toward the net, length at most 1.
-// consume(action): true once per press of 'drive' | 'slice' | 'lob'.
+// consume(action): true once per press of 'drive' | 'slice' | 'lob' | 'challenge'.
 
 const MOVE_KEYS = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
 };
-const ACTION_KEYS = { Space: 'drive', KeyK: 'slice', KeyL: 'lob' };
+const ACTION_KEYS = { Space: 'drive', KeyK: 'slice', KeyL: 'lob', KeyC: 'challenge' };
 const STICK_DEADZONE = 0.18;
 
 export function isTouchDevice() {
@@ -15,7 +15,7 @@ export function isTouchDevice() {
 
 export function createInput(target = window, doc = document) {
   const held = { left: false, right: false, up: false, down: false };
-  const pressed = { drive: false, slice: false, lob: false };
+  const pressed = { drive: false, slice: false, lob: false, challenge: false };
   const stick = { active: false, id: -1, x: 0, y: 0 };
   const out = { x: 0, y: 0 };
 
@@ -101,6 +101,8 @@ export function createInput(target = window, doc = document) {
       pressed[action] = false;
       return v;
     },
-    clear() { pressed.drive = pressed.slice = pressed.lob = false; },
+    clear() { pressed.drive = pressed.slice = pressed.lob = pressed.challenge = false; },
+    // the on-screen challenge button
+    press(action) { pressed[action] = true; },
   };
 }

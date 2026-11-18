@@ -214,3 +214,32 @@ body.customising #menu { opacity: 0; pointer-events: none; }
 }
 
 .menu-credit { margin-top: 10px; font-size: 10.5px; line-height: 1.4; opacity: 0.5; text-align: center; }
+
+/* Challenges: pips on the scoreboard, the button, and the ball tracking review */
+.sb-name { gap: 8px; }
+.sb-ch { font-size: 7px; letter-spacing: 2px; color: #d8f23a; opacity: 0.85; }
+#challenge-btn {
+  position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom));
+  padding: 10px 14px; border: 0; border-radius: 4px; cursor: pointer;
+  background: #d8f23a; color: #10140a; font: inherit; font-weight: 800; letter-spacing: 0.12em; font-size: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); animation: ch-pulse 0.9s ease-in-out infinite alternate;
+}
+#challenge-btn kbd { font: inherit; padding: 1px 6px; border-radius: 3px; background: rgba(16, 20, 10, 0.15); }
+#challenge-btn #challenge-left { font-weight: 600; font-size: 11px; letter-spacing: 0.08em; opacity: 0.75; }
+#challenge-btn.hidden { display: none; }
+@keyframes ch-pulse { from { transform: scale(1); } to { transform: scale(1.05); } }
+body.touch #challenge-btn { bottom: auto; top: max(70px, env(safe-area-inset-top)); }
+#review {
+  position: absolute; right: max(18px, env(safe-area-inset-right)); top: max(70px, env(safe-area-inset-top));
+  width: min(320px, 70vw); background: rgba(14, 18, 25, 0.94); border-radius: 4px; overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); font-weight: 700;
+}
+#review.hidden { display: none; }
+.rv-title { background: #0e2a47; color: #cfe1f5; font-size: 10px; padding: 6px 10px; letter-spacing: 0.14em; }
+#rv-svg { display: block; width: 100%; height: auto; }
+#rv-svg .rv-lbl { fill: rgba(255, 255, 255, 0.75); font: 700 11px system-ui, sans-serif; letter-spacing: 0.12em; }
+#rv-ball { opacity: 0; transform-box: fill-box; transform-origin: center; transform: scale(2.2); transition: opacity 0.35s, transform 0.45s ease-in; }
+#review.landed #rv-ball { opacity: 1; transform: scale(1); }
+#rv-verdict { min-height: 38px; text-align: center; font-size: 22px; font-style: italic; letter-spacing: 0.12em; padding: 6px 0 8px; }
+#rv-verdict.in { color: #d8f23a; }
+#rv-verdict.out { color: #ff6b5e; }

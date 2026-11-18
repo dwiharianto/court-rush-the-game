@@ -24,6 +24,27 @@ export function inServiceBox(x, z, server, fromRight) {
   return bx >= -m && bx <= COURT.singlesHalf + m;
 }
 
+// How far a bounce is inside (positive) or outside (negative) the nearest line that
+// decides it, in metres, and which line. Touching the line is in, as above.
+export function lineMargin(x, z, side) {
+  const m = BALL.radius;
+  const d = z * sideSign(side);
+  const sideM = COURT.singlesHalf + m - Math.abs(x), baseM = COURT.halfLength + m - d;
+  return sideM < baseM ? { margin: sideM, line: 'side' } : { margin: baseM, line: 'base' };
+}
+export function serviceMargin(x, z, server, fromRight) {
+  const m = BALL.radius;
+  const d = z * sideSign(1 - server);
+  const serverX = sideSign(server) * (fromRight ? 1 : -1);
+  const bx = -x * serverX;
+  const opts = [
+    { margin: COURT.serviceLine + m - d, line: 'service' },
+    { margin: bx + m, line: 'centre' },
+    { margin: COURT.singlesHalf + m - bx, line: 'side' },
+  ];
+  return opts.reduce((a, b) => (b.margin < a.margin ? b : a));
+}
+
 export function createMatch({ gamesToWin = 6, firstServer = 0 } = {}) {
   return {
     gamesToWin,

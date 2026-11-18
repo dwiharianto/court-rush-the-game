@@ -12,14 +12,20 @@
       <div id="scoreboard">
         <div class="sb-title"><span id="sb-tour"></span></div>
         <div class="sb-row" data-side="0">
-          <span class="sb-dot"></span><span class="sb-name"></span><span class="sb-games">0</span><span class="sb-points">0</span>
+          <span class="sb-dot"></span><span class="sb-name"><span class="sb-nm"></span><span class="sb-ch" title="Challenges left"></span></span><span class="sb-games">0</span><span class="sb-points">0</span>
         </div>
         <div class="sb-row" data-side="1">
-          <span class="sb-dot"></span><span class="sb-name"></span><span class="sb-games">0</span><span class="sb-points">0</span>
+          <span class="sb-dot"></span><span class="sb-name"><span class="sb-nm"></span><span class="sb-ch" title="Challenges left"></span></span><span class="sb-games">0</span><span class="sb-points">0</span>
         </div>
       </div>
       <div id="message"><div id="message-main"></div><div id="message-sub"></div></div>
       <div id="timing"></div>
+      <button id="challenge-btn" type="button" class="hidden">CHALLENGE <kbd>C</kbd> <span id="challenge-left"></span></button>
+      <div id="review" class="hidden" aria-live="polite">
+        <div class="rv-title">BALL TRACKING REVIEW <span id="rv-line"></span></div>
+        <svg id="rv-svg" viewBox="0 0 300 170" role="img" aria-label="Where the ball landed against the line"></svg>
+        <div id="rv-verdict"></div>
+      </div>
       <button id="pause-btn" type="button" aria-label="Pause"><span></span><span></span></button>
       <div id="touch">
         <div id="stick"><div id="stick-knob"></div></div>
@@ -65,6 +71,7 @@
           <div><b>L</b><span>Lob</span></div>
           <div><b>At the net</b><span>Space volleys, K drop volleys</span></div>
           <div><b>Serve</b><span>Press once to toss, again at the top</span></div>
+          <div><b>C</b><span>Challenge a line call</span></div>
         </div>
         <div class="menu-controls" id="controls-touch">
           <div><b>Stick</b><span>Move, and aim at contact</span></div>

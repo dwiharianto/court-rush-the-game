@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame } from '../src/main.js';
-import { BALL, COURT, SWING, SURFACES, netHeightAt } from '../src/config.js';
+import { BALL, CALLS, COURT, SWING, SURFACES, netHeightAt } from '../src/config.js';
 import { createBall, stepBall, planShot, predictAtPlane, copyBall, lowerOverNet } from '../src/ball.js';
 import { createMatch, awardPoint, fault, pointLabels, serveFromRight, inSingles, inServiceBox } from '../src/rules.js';
 import { createBot, playPoints, seededRng } from './bot.js';
@@ -408,6 +408,9 @@ test('players split-step only when set, not on every shot', () => {
 
 // ---------------------------------------------------------------- long run with invariants
 test('several hundred points of play keep the rules and score consistent', () => {
+  // with a perfect line judge, so every call can be checked against the rules
+  const saved = { ...CALLS };
+  CALLS.missRate = 0; CALLS.cpuHopeful = 0;
   let totalFaults = 0;
   for (const [difficulty, profile, seed] of [['easy', 'casual', 11], ['normal', 'solid', 12], ['hard', 'sharp', 13]]) {
     let m = null;
@@ -492,4 +495,41 @@ test('several hundred points of play keep the rules and score consistent', () =>
     assert.ok(stats.human > 0 && stats.cpu > 0, `${where()}: both players win points`);
   }
   assert.ok(totalFaults >= 1, 'faults happen');
+  Object.assign(CALLS, saved);
+});
+
+test('line judge errors and challenges keep the score consistent', () => {
+  // a very fallible line judge and a CPU that challenges every wrong call against it
+  const saved = { ...CALLS };
+  Object.assign(CALLS, { close: 0.4, missRate: 0.9, cpuWrong: 1, cpuHopeful: 0.2 });
+  try {
+    let atStart = null, open = null, results = 0, overturned = 0, replays = 0;
+    let lost = 0, game = null;
+    const stats = playPoints(createGame, {
+      difficulty: 'normal', profile: 'solid', seed: 21, points: 250,
+      onStep(g) { game = g; },
+      onEvent(e, g) {
+        if (e.type === 'serveReady') atStart = { points: g.match.points.slice(), games: g.match.games.slice(), serveNumber: g.match.serveNumber };
+        if (e.type === 'challenge') { assert.equal(open, null, 'one review at a time'); assert.equal(e.side, 1, 'only the CPU challenges here'); open = e; }
+        if (e.type === 'challengeResult') {
+          assert.ok(open, 'a verdict follows a challenge');
+          open = null; results++;
+          if (e.overturned) overturned++; else lost++;
+          assert.equal(e.inside, e.margin >= 0, 'the verdict matches the ball mark');
+          assert.equal(g.challenges[1], Math.max(0, 3 - lost), 'only unsuccessful challenges are used up');
+        }
+        if (e.type === 'replay') {
+          replays++;
+          assert.deepEqual(g.match.points, atStart.points, 'a replayed point restores the score');
+          assert.deepEqual(g.match.games, atStart.games);
+        }
+        if (e.type === 'matchStart') lost = 0;
+      },
+    });
+    assert.equal(stats.stuck, false, 'play never stalls');
+    assert.ok(results >= 3, `challenges happen (${results})`);
+    assert.ok(overturned >= 1, 'some calls are overturned');
+    assert.ok(game.challenges[1] >= 0);
+    void replays;
+  } finally { Object.assign(CALLS, saved); }
 });

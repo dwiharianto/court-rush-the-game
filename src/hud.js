@@ -1,12 +1,19 @@
 // HTML overlay: scoreboard, centre message, timing label.
-import { NAMES } from './config.js';
+import { BALL, NAMES } from './config.js';
 import { PALETTE, BUILDS, HAIR_STYLES, HEADWEAR, WRISTBANDS, cleanName } from './profile.js';
 
 export function createHud(doc = document) {
   const rows = [...doc.querySelectorAll('.sb-row')];
+  const BALL_R = BALL.radius;
+  const challengeBtn = doc.getElementById('challenge-btn'), challengeLeft = doc.getElementById('challenge-left');
+  const review = doc.getElementById('review'), rvSvg = doc.getElementById('rv-svg');
+  const rvVerdict = doc.getElementById('rv-verdict'), rvLine = doc.getElementById('rv-line');
+  let challengeHandler = null, reviewTimer = 0;
+  challengeBtn.addEventListener('click', () => { if (challengeHandler) challengeHandler(); challengeBtn.blur(); });
   const els = rows.map((row) => ({
     row,
-    name: row.querySelector('.sb-name'),
+    name: row.querySelector('.sb-nm'),
+    ch: row.querySelector('.sb-ch'),
     games: row.querySelector('.sb-games'),
     points: row.querySelector('.sb-points'),
   }));
@@ -179,6 +186,44 @@ export function createHud(doc = document) {
         els[i].row.classList.toggle('serving', score.server === i);
       }
     },
+    // challenges left, one pip each
+    setChallenges(left) {
+      for (let i = 0; i < 2; i++) els[i].ch.textContent = '\u25cf'.repeat(Math.max(0, left[i]));
+    },
+    // the challenge button: shown while the player can challenge the last call
+    setChallengeAvailable(on, left) {
+      challengeBtn.classList.toggle('hidden', !on);
+      challengeLeft.textContent = on ? `${left} left` : '';
+    },
+    onChallenge(handler) { challengeHandler = handler; },
+    // The review: the line and, after a moment, the ball's mark against it, drawn to
+    // scale (1 px = 2 mm). margin: metres inside (positive) or outside the line.
+    showReview({ margin, line, surfaceColor = '#2f5d93' }) {
+      const S = 500, R = BALL_R * S, edge = 190; // the line's outer edge
+      const cx = Math.max(20, Math.min(285, edge + (BALL_R - margin) * S));
+      const names = { side: 'SIDELINE', base: 'BASELINE', service: 'SERVICE LINE', centre: 'CENTRE LINE' };
+      rvLine.textContent = `| ${names[line] || 'LINE'}`;
+      rvSvg.innerHTML = `
+        <rect x="0" y="0" width="300" height="170" fill="${surfaceColor}"/>
+        <rect x="${edge}" y="0" width="110" height="170" fill="#1d3b24" opacity="0.55"/>
+        <rect x="${edge - 25}" y="0" width="25" height="170" fill="#f4f4ef"/>
+        <text x="${edge - 34}" y="160" text-anchor="end" class="rv-lbl">IN</text>
+        <text x="${edge + 10}" y="160" class="rv-lbl">OUT</text>
+        <ellipse id="rv-ball" cx="${cx}" cy="80" rx="${R}" ry="${R * 1.6}" fill="#d8f23a" fill-opacity="0.85" stroke="#10140a" stroke-width="1.5"/>`;
+      rvVerdict.textContent = '';
+      rvVerdict.className = '';
+      review.classList.remove('hidden', 'landed');
+      clearTimeout(reviewTimer);
+      reviewTimer = setTimeout(() => review.classList.add('landed'), 1100);
+    },
+    reviewVerdict(inside, margin) {
+      review.classList.add('landed');
+      rvVerdict.textContent = inside ? 'IN' : `OUT ${Math.max(1, Math.round(-margin * 1000))} MM`;
+      rvVerdict.className = inside ? 'in' : 'out';
+      clearTimeout(reviewTimer);
+      reviewTimer = setTimeout(() => review.classList.add('hidden'), 2800);
+    },
+    hideReview() { clearTimeout(reviewTimer); review.classList.add('hidden'); },
     showMessage(main, sub = '', seconds = 1.6) {
       messageMain.textContent = main;
       messageSub.textContent = sub;

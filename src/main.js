@@ -1,11 +1,11 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
-import { AI, AUDIO, BALL, CONTACT, COURT, DEFAULT_SURFACE, DIVE, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
+import { AI, AUDIO, BALL, CALLS, CONTACT, COURT, DEFAULT_SURFACE, DIVE, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
 import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
-import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox } from './rules.js';
+import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox, lineMargin, serviceMargin } from './rules.js';
 import { createAI } from './ai.js';
 
-const NO_INPUT = { x: 0, y: 0, drive: false, slice: false, lob: false };
+const NO_INPUT = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false };
 const TOSS_VY = Math.sqrt(2 * BALL.gravity * (SERVE.tossApex - SERVE.tossY0));
 const TOSS_APEX_T = TOSS_VY / BALL.gravity; // ideal moment for the second press
 
@@ -188,6 +188,7 @@ export function createGame(options = {}) {
     ball.lastHitter = -1;
     ball.letPending = false;
     holdBall(server);
+    call = null;
     g.rallyHits = 0;
     g.state = 'serveReady';
     g.timer = 0;
@@ -458,7 +459,8 @@ export function createGame(options = {}) {
       else if (e.type === 'netCord') ball.letPending = true;
       else if (e.type === 'bounce') {
         if (e.n === 1) {
-          if (!inServiceBox(e.x, e.z, hitter, serveFromRight(match))) serveFault('out');
+          const truth = inServiceBox(e.x, e.z, hitter, serveFromRight(match));
+          if (!judge(truth, serviceMargin(e.x, e.z, hitter, serveFromRight(match)), e, true)) { serveFault('out'); closeOutCall(); }
           else if (ball.letPending) callLet();
         } else endPoint(hitter, 'ace');
       }
@@ -467,9 +469,79 @@ export function createGame(options = {}) {
     if (e.type === 'net') endPoint(1 - hitter, 'net');
     else if (e.type === 'bounce') {
       if (e.n === 1) {
-        if (!inSingles(e.x, e.z, 1 - hitter)) endPoint(1 - hitter, 'out');
+        const truth = inSingles(e.x, e.z, 1 - hitter);
+        if (!judge(truth, lineMargin(e.x, e.z, 1 - hitter), e, false)) { endPoint(1 - hitter, 'out'); closeOutCall(); }
       } else endPoint(hitter, 'double');
     }
+  }
+
+  // ------------------------------------------------------------ line calls and challenges
+  // A close ball can be called wrong. The latest close call is kept so it can be
+  // challenged: an 'out' that stopped play by the player who hit it, in the pause
+  // after; a ball called good by the player it was hit to, straight away (play stops).
+  let call = null;
+  const challenges = [CALLS.challenges, CALLS.challenges];
+  g.challenges = challenges;
+  function judge(truth, lm, e, serve) {
+    const near = Math.abs(lm.margin) < CALLS.close;
+    let called = truth;
+    if (near && rng() < CALLS.missRate * (1 - Math.abs(lm.margin) / CALLS.close)) called = !truth;
+    call = !near ? null : {
+      serve, truth, called, margin: lm.margin, line: lm.line, x: e.x, z: e.z, hitter: ball.lastHitter,
+      at: g.time, snapshot: JSON.stringify(match), challenger: called ? 1 - ball.lastHitter : ball.lastHitter,
+      challenged: false, cpuAt: null,
+    };
+    if (call && call.challenger === 1 && challenges[1] > 0) {
+      // the CPU challenges most wrong calls against it, and the odd correct one
+      const wrong = truth !== called;
+      if (rng() < (wrong ? CALLS.cpuWrong : CALLS.cpuHopeful)) call.cpuAt = g.time + (called ? 0.35 : 0.8);
+    }
+    return called;
+  }
+  // an 'out' call against the human: leave time to challenge it
+  function closeOutCall() {
+    if (call && !call.called && call.challenger === 0 && challenges[0] > 0) g.timer = Math.max(g.timer, CALLS.window + 0.6);
+  }
+  function canChallenge(side) {
+    const c = call;
+    if (!c || c.challenged || c.challenger !== side || challenges[side] <= 0) return false;
+    if (g.time - c.at > CALLS.window + (c.called ? 0 : 0.6)) return false;
+    if (c.called) return (g.state === 'rally' || g.state === 'pointOver') && (g.state !== 'rally' || ball.lastHitter === c.hitter);
+    return g.state === 'pointOver';
+  }
+  g.canChallenge = canChallenge;
+  function challenge(side) {
+    call.challenged = true;
+    g.state = 'review';
+    g.timer = CALLS.reviewTime;
+    ball.inPlay = false;
+    for (const p of players) { endSlide(p, true); }
+    events.push({ type: 'challenge', side, x: call.x, z: call.z, margin: call.margin, line: call.line, serve: call.serve, called: call.called, left: challenges[side] });
+  }
+  function resolveChallenge() {
+    const c = call, side = c.challenger;
+    const overturned = c.truth !== c.called;
+    if (!overturned) challenges[side]--;
+    events.push({ type: 'challengeResult', side, overturned, inside: c.truth, margin: c.margin, line: c.line, left: challenges[side] });
+    const restore = () => Object.assign(match, JSON.parse(c.snapshot));
+    for (const p of players) setAction(p, 'ready');
+    if (!c.called) { // an 'out' that ended the point
+      g.state = 'pointOver';
+      g.timer = CALLS.afterReview;
+      if (overturned) { // the ball was good: replay the point
+        restore();
+        afterPause = 'serve';
+        events.push({ type: 'replay', serve: c.serve, serveNumber: match.serveNumber });
+      }
+      return;
+    }
+    // a ball called good: if it was out, the challenger wins it; if not, loses the point
+    restore();
+    ball.isServe = c.serve;
+    ball.lastHitter = c.hitter;
+    if (overturned && c.serve) serveFault('out');
+    else finishPoint(overturned ? side : 1 - side, overturned ? 'out' : 'challenge');
+    g.timer = Math.max(g.timer, CALLS.afterReview);
   }
 
   // Would a first bounce at (x, z) on the CPU side be good? Used by the CPU to leave balls.
@@ -487,6 +559,8 @@ export function createGame(options = {}) {
   function start() {
     match = createMatch({ gamesToWin: options.gamesToWin ?? NAMES.gamesToWin, firstServer: options.firstServer ?? 0 });
     events.push({ type: 'matchStart' });
+    challenges[0] = challenges[1] = CALLS.challenges;
+    call = null;
     setupServe();
   }
 
@@ -548,6 +622,17 @@ export function createGame(options = {}) {
   function step(dt, inp) {
     input = inp || NO_INPUT;
     g.time += dt;
+    if (g.state === 'review') {
+      for (const p of players) drive(p, 0, 0, 0, dt);
+      g.timer -= dt;
+      if (g.timer <= 0) resolveChallenge();
+      return;
+    }
+    if (input.challenge && canChallenge(0)) { challenge(0); return; }
+    if (call && call.cpuAt !== null && g.time >= call.cpuAt) {
+      call.cpuAt = null;
+      if (canChallenge(1)) { challenge(1); return; }
+    }
     if (g.state === 'serveReady' || g.state === 'toss') g.timer += dt;
 
     stepHuman(dt);
@@ -621,6 +706,7 @@ async function boot() {
   const world = createWorld();
   const hud = createHud();
   const input = createInput();
+  hud.onChallenge(() => input.press('challenge'));
   const audio = createAudio();
   let game = createGame();
   const { loadProfile, saveProfile, sanitize, kitFor, cpuOpponent, randomProfile } = await import('./profile.js');
@@ -689,6 +775,8 @@ async function boot() {
     rebuildView(1, look(cpu, 0xb3261e));
     hud.setNames(me.name, cpu.name);
     game.start();
+    hud.setChallenges(game.challenges);
+    hud.hideReview();
     matchTime = 0;
     clockRunning = true;
     world.setSpeed(0);
@@ -781,7 +869,7 @@ async function boot() {
     audio.play('effort', { side: e.side, power: e.kmh / 140, x: p.x, z: p.z });
   }
 
-  const REASON = { out: 'OUT', net: 'NET', double: 'WINNER', ace: 'ACE', doubleFault: 'DOUBLE FAULT' };
+  const REASON = { out: 'OUT', net: 'NET', double: 'WINNER', ace: 'ACE', doubleFault: 'DOUBLE FAULT', challenge: 'CALL STANDS' };
 
   function handleEvents() {
     for (const e of game.events) {
@@ -821,6 +909,21 @@ async function boot() {
           break;
         case 'net':
           audio.play(e.cord ? 'cord' : 'net', { x: e.x, z: 0 });
+          break;
+        case 'challenge':
+          hud.showMessage('CHALLENGE', shortName(e.side), 1.4);
+          hud.showReview({ margin: e.margin, line: e.line, surfaceColor: SURFACES[game.surface].court });
+          audio.react('applause', 0.15);
+          break;
+        case 'challengeResult':
+          hud.reviewVerdict(e.inside, e.margin);
+          hud.setChallenges(game.challenges);
+          hud.showMessage(e.overturned ? 'CALL OVERTURNED' : 'CALL STANDS', e.inside ? 'BALL IN' : 'BALL OUT', 1.8);
+          if (e.overturned) { audio.call('Correction!'); audio.react('applause', 0.45); }
+          break;
+        case 'replay':
+          showScore();
+          hud.showMessage('REPLAY THE POINT', e.serveNumber === 2 ? 'SECOND SERVE' : 'FIRST SERVE', 1.6);
           break;
         case 'netCord':
           audio.play('cord', { x: e.x, z: 0 });
@@ -885,10 +988,11 @@ async function boot() {
   window.addEventListener('resize', resize);
   resize();
 
-  const frameInput = { x: 0, y: 0, drive: false, slice: false, lob: false };
+  const frameInput = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false };
   let last = performance.now();
   let acc = 0;
   let dustClock = 0;
+  let shownChallenge = false;
   // render interpolation: positions one physics step back, blended toward the latest
   const prevP = [{ x: 0, z: 0 }, { x: 0, z: 0 }], drawP = [{}, {}];
   const prevBall = { x: 0, y: 0, z: 0 }, drawBall = {};
@@ -926,6 +1030,7 @@ async function boot() {
       frameInput.drive = first && input.consume('drive');
       frameInput.slice = first && input.consume('slice');
       frameInput.lob = first && input.consume('lob');
+      frameInput.challenge = first && input.consume('challenge');
       game.step(BALL.fixedDt, frameInput);
       first = false;
       acc -= BALL.fixedDt;
@@ -955,6 +1060,8 @@ async function boot() {
     // the crowd settles as a player gets ready to serve and stays quiet through the rally
     const st = game.state;
     audio.setCrowd(st === 'serveReady' || st === 'toss' || st === 'rally' ? 'hush' : 'chatter');
+    const canCh = game.canChallenge(0);
+    if (canCh !== shownChallenge) { shownChallenge = canCh; hud.setChallengeAvailable(canCh, game.challenges[0]); }
     audio.update(dt);
     world.setClock(matchTime);
     world.updateCamera(dt, game.players[0].x, game.players[0].z);
