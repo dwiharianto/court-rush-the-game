@@ -8,6 +8,7 @@
 //   lHip, rHip       hip flexion, positive swings the thigh forward
 //   lHipZ, rHipZ     hip abduction, positive moves the leg outward
 //   lKnee, rKnee     knee flexion, positive folds the shin back
+//   lAnkle, rAnkle   ankle, positive points the toes down (heel lifts); 0 keeps the sole level
 //   hipsYaw          pelvis turn about the vertical axis
 //   torsoX/Y/Z       torso lean forward, twist (positive turns to its left), side lean
 //   headX, headY     nod and turn
@@ -23,9 +24,10 @@
 import * as THREE from 'three';
 import { BODY, ANIM, SERVE_ANIM, SWING } from './config.js';
 import { createBodyRig } from './rig.js';
+import MOCAP from './assets/mocap.js';
 
 const POSE_KEYS = [
-  'lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'hipsYaw',
+  'lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle', 'hipsYaw',
   'torsoX', 'torsoY', 'torsoZ', 'headX', 'headY',
   'lShX', 'rShX', 'lShZ', 'rShZ', 'lShY', 'rShY', 'lElbow', 'rElbow',
   'rWristX', 'rWristY', 'rWristZ', 'lGrip', 'lift', 'hipY',
@@ -348,8 +350,8 @@ export function createFigure(options = {}) {
     legR.hip.rotation.set(-p.rHip, 0, -p.rHipZ);
     legL.knee.rotation.x = p.lKnee;
     legR.knee.rotation.x = p.rKnee;
-    legL.foot.rotation.x = p.lHip - p.lKnee; // keep the sole level
-    legR.foot.rotation.x = p.rHip - p.rKnee;
+    legL.foot.rotation.x = p.lHip - p.lKnee + p.lAnkle; // the sole level, plus the ankle
+    legR.foot.rotation.x = p.rHip - p.rKnee + p.rAnkle;
 
     if (plant) {
       const drop = Math.max(legDrop(p.lHip, p.lHipZ, p.lKnee), legDrop(p.rHip, p.rHipZ, p.rKnee));
@@ -427,7 +429,7 @@ export function createFigure(options = {}) {
 // A rigged .glb with animation clips can implement the same three members
 // (map action names to clips, actionT to clip time) and drop in unchanged.
 
-const LEG_KEYS = ['lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'lift'];
+const LEG_KEYS = ['lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle', 'lift'];
 const LEG_SET = new Set([...LEG_KEYS, 'hipY']);
 
 const READY = makePose({
@@ -600,7 +602,7 @@ const SLIDE_FWD = makePose({
   rShX: 0.45, rShZ: 0.5, rElbow: 1.2, rWristX: -0.5, rWristZ: -0.3,
   lShX: 0.6, lShZ: 0.75, lElbow: 0.6,
 });
-const MIRROR_PAIRS = [['lHip', 'rHip'], ['lHipZ', 'rHipZ'], ['lKnee', 'rKnee']];
+const MIRROR_PAIRS = [['lHip', 'rHip'], ['lHipZ', 'rHipZ'], ['lKnee', 'rKnee'], ['lAnkle', 'rAnkle']];
 const MIRROR_FLIP = ['hipsYaw', 'torsoY', 'torsoZ', 'headY'];
 
 // out = pose mirrored left to right, legs only plus the twist and lean keys
@@ -609,6 +611,56 @@ function mirrorLegs(out, pose) {
   for (const [l, r] of MIRROR_PAIRS) { out[l] = pose[r]; out[r] = pose[l]; }
   for (const k of MIRROR_FLIP) out[k] = -pose[k];
   return out;
+}
+
+// ---- captured gaits (tools/build-mocap.mjs)
+const GAITS = ['walk', 'jog', 'run', 'dash'].map((n) => MOCAP.clips[n]);
+const BACK = MOCAP.clips.back;
+const GAIT_KEYS = Object.keys(BACK.keys);
+const GAIT_N = MOCAP.samples;
+for (const c of [...GAITS, BACK]) {
+  c.mean = {}; c.min = {};
+  for (const key of GAIT_KEYS) {
+    const a = c.keys[key];
+    c.mean[key] = a.reduce((x, y) => x + y, 0) / a.length;
+    c.min[key] = Math.min(...a);
+  }
+}
+// a looping cycle at phase u (0..1), Catmull-Rom between samples
+function sampleCycle(a, u) {
+  const x = (((u % 1) + 1) % 1) * GAIT_N, i = Math.floor(x), t = x - i;
+  const p0 = a[(i + GAIT_N - 1) % GAIT_N], p1 = a[i % GAIT_N], p2 = a[(i + 1) % GAIT_N], p3 = a[(i + 2) % GAIT_N];
+  return p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+}
+// a gait key with its swing scaled: shorter steps below the slowest clip, longer above the fastest
+const SWING_KEYS = new Set(['lHip', 'rHip', 'lAnkle', 'rAnkle', 'lShX', 'rShX']);
+const FOLD_KEYS = new Set(['lKnee', 'rKnee', 'lift']);
+function scaled(c, u, key, a) {
+  const v = sampleCycle(c.keys[key], u);
+  if (a === 1) return v;
+  if (SWING_KEYS.has(key)) return c.mean[key] + (v - c.mean[key]) * a;
+  if (FOLD_KEYS.has(key)) return c.min[key] + (v - c.min[key]) * a;
+  return v;
+}
+// clip weights for a speed, and how much to stretch the stride beyond the clips
+function gaitWeights(speed, w) {
+  w.fill(0);
+  const last = GAITS.length - 1;
+  if (speed <= GAITS[0].speed) { w[0] = 1; const a = clamp(Math.sqrt(speed / GAITS[0].speed), 0.45, 1); return { legs: a, stride: a }; }
+  if (speed >= GAITS[last].speed) { w[last] = 1; const a = Math.sqrt(speed / GAITS[last].speed); return { legs: Math.min(a, 1.25), stride: a }; }
+  for (let i = 0; i < last; i++) {
+    if (speed <= GAITS[i + 1].speed) {
+      const t = (speed - GAITS[i].speed) / (GAITS[i + 1].speed - GAITS[i].speed);
+      w[i] = 1 - t; w[i + 1] = t;
+      break;
+    }
+  }
+  return { legs: 1, stride: 1 };
+}
+function gaitMean(key, w, back) {
+  let m = 0;
+  for (let i = 0; i < GAITS.length; i++) m += w[i] * GAITS[i].mean[key];
+  return m + (BACK.mean[key] - m) * back;
 }
 
 const smooth = (cur, target, rate, dt) => cur + (target - cur) * Math.min(1, dt * rate);
@@ -643,7 +695,9 @@ export function createCharacter(options = {}) {
   const slidePose = makePose(), tmp = makePose();
   let time = Math.random() * 10;
   let phase = 0, shufflePhase = 0;
-  let runBlend = 0, shuffleBlend = 0, slideBlend = 0;
+  let runBlend = 0, shuffleBlend = 0, slideBlend = 0, legBlend = 0;
+  let gaitU = 0, backU = 0, backBlend = 0;
+  const gw = [0, 0, 0, 0];
   let yaw = 0, yawRate = 0;
   let actionBlend = 0;
   let held = null;
@@ -679,7 +733,9 @@ export function createCharacter(options = {}) {
     if (!feetReady) { feet.forEach((f, i) => { home(s, th, i, width, f); f.t = -1; }); feetReady = true; }
     // planting suits standing, adjusting steps and walking; a real run keeps its
     // natural stride (knee fold, kick-back, a moment in the air)
-    const runFade = 1 - clamp((speed - ANIM.plantRunFrom) / (ANIM.plantRunTo - ANIM.plantRunFrom), 0, 1);
+    const runFade = shuffleBlend > 0.5
+      ? 1 - clamp((speed - ANIM.plantRunFrom) / (ANIM.plantRunTo - ANIM.plantRunFrom), 0, 1)
+      : 1 - clamp((speed - ANIM.plantWalkFrom) / (ANIM.plantWalkTo - ANIM.plantWalkFrom), 0, 1); // captured gaits step on their own
     // turning on the spot: the feet step round with the body instead of staying put and crossing
     const turnFade = 1 - clamp((Math.abs(yawRate) - 1.2) / 1.8, 0, 1);
     ikW = smooth(ikW, sliding || held || !ANIM.footPlant ? 0 : Math.min(runFade, turnFade), 12, dt);
@@ -828,29 +884,46 @@ export function createCharacter(options = {}) {
       idle.lHip += 0.17 * land; idle.rHip += 0.17 * land;
     }
 
-    // run cycle: hips and shoulders counter-rotate, arms pump, knees drive
+    // run cycle from motion capture: walk, jog, run and sprint cycles blended by
+    // speed at one shared phase (each starts at the left foot's touchdown), with
+    // the stride matched to the speed so the feet do not skate. Backwards it is a
+    // captured backpedal. Leans, the head on the ball and the racket arm go on top.
     const k = clamp(speed / 6.2, 0, 1);
     const sn = Math.sin(phase);
-    // the thigh swing that covers half a stride with a 0.92 m leg, so planted feet do not skate
-    const hipAmp = Math.asin(Math.min(0.72, stride / (4 * 0.92))) * (0.85 + 0.15 * k);
-    const kneeAmp = 0.7 + 0.9 * k, armAmp = 0.35 + 0.45 * k;
+    const legLen = L.thigh + L.shin;
+    const amp = gaitWeights(speed, gw);
+    let cyc = 0;
+    for (let i = 0; i < GAITS.length; i++) cyc += gw[i] * GAITS[i].stride;
+    cyc *= legLen * amp.stride * ANIM.gaitStride;
+    backBlend = smooth(backBlend, dir < 0 && !acting ? 1 : 0, 8, dt);
+    const backAmp = clamp(Math.sqrt(speed / BACK.speed), 0.5, 1.5);
+    if (dir < 0) backU = (backU + speed * dt / (BACK.stride * legLen * backAmp * ANIM.gaitStride)) % 1;
+    else gaitU = (gaitU + speed * dt / Math.max(0.3, cyc)) % 1;
     copyPose(run, READY);
-    run.lHip = 0.3 + hipAmp * sn; run.rHip = 0.3 - hipAmp * sn;
-    // the knee folds after push-off and through the swing, then straightens to land
-    const kl = Math.cos(phase + Math.PI / 4), kr = Math.cos(phase + Math.PI + Math.PI / 4);
-    run.lKnee = 0.35 + kneeAmp * Math.pow(Math.max(0, kl), 1.2);
-    run.rKnee = 0.35 + kneeAmp * Math.pow(Math.max(0, kr), 1.2);
-    run.lHipZ = 0.05; run.rHipZ = 0.05;
-    run.hipsYaw = -0.2 * sn * k;
-    run.torsoY = 0.32 * sn * k - look * 0.15;
-    // lean forward with speed and acceleration, back when braking, into the turn sideways
-    run.torsoX = 0.2 + 0.18 * k + clamp(accFwd * 0.03, -0.3, 0.2);
-    run.torsoZ = clamp(-accSide * 0.025, -0.25, 0.25);
+    for (const key of GAIT_KEYS) {
+      let v = 0;
+      for (let i = 0; i < GAITS.length; i++) if (gw[i] > 0) v += gw[i] * scaled(GAITS[i], gaitU, key, amp.legs);
+      if (backBlend > 0.001) v += (scaled(BACK, backU, key, backAmp) - v) * backBlend;
+      run[key] = v;
+    }
+    run.lift *= legLen;
+    // a tennis player moves low: bent knees and a forward lean at walking pace
+    const athletic = 1 - clamp((speed - 1) / 3, 0, 1);
+    run.lHip += 0.18 * athletic; run.rHip += 0.18 * athletic;
+    run.lKnee += 0.3 * athletic; run.rKnee += 0.3 * athletic;
+    run.torsoX += 0.12 * athletic;
+    // lean into a sprint and back when braking, into the turn sideways
+    run.torsoX += clamp(accFwd * 0.03, -0.3, 0.2);
+    run.torsoZ += clamp(-accSide * 0.025, -0.25, 0.25);
+    run.torsoY -= look * 0.15;
     // running away from the net, the head turns to keep an eye on the ball
-    run.headY = clamp(-run.hipsYaw - run.torsoY - look * 0.5, -1.1, 1.1); run.headX = -0.18 - 0.1 * k;
-    run.lShX = 0.2 - armAmp * sn; run.lShZ = 0.14; run.lElbow = 1.35 - 0.3 * sn;
-    run.rShX = 0.35 + armAmp * 0.65 * sn; run.rShZ = 0.2; run.rElbow = 1.25 + 0.2 * sn;
-    run.lift = (0.015 + 0.04 * k) * Math.abs(sn);
+    run.headY = clamp(-run.hipsYaw - run.torsoY - look * 0.5, -1.1, 1.1);
+    run.headX -= 0.12 + 0.08 * k;
+    // the racket arm carries the racket in front and swings half as much
+    const rMean = gaitMean('rShX', gw, backBlend), eMean = gaitMean('rElbow', gw, backBlend);
+    run.rShX = 0.4 + 0.5 * (run.rShX - rMean);
+    run.rElbow = 1.2 + 0.5 * (run.rElbow - eMean);
+    run.rShZ = 0.2;
 
     // side shuffle: legs open and close, body stays square to the net
     const ss = Math.sin(shufflePhase);
@@ -862,6 +935,8 @@ export function createCharacter(options = {}) {
     shuffle.lift = 0.035 * Math.abs(Math.sin(shufflePhase * 2));
 
     blendPose(loco, idle, run, runBlend);
+    legBlend = smooth(legBlend, clamp(speed / 0.8, 0, 1) * (1 - shuffleBlend), 10, dt);
+    for (const key of LEG_KEYS) loco[key] = idle[key] + (run[key] - idle[key]) * legBlend;
     if (shuffleBlend > 0.001) blendPose(loco, loco, shuffle, shuffleBlend);
 
     // ---- planted feet: each foot stays fixed on the court while it carries weight,
@@ -932,6 +1007,7 @@ export function createCharacter(options = {}) {
     update,
     splitStep() { splitT = 0; },
     feet, // the foot planner's state (for checks)
+    get lastPose() { return last; }, // the pose last applied (for checks)
     // world position of the racket head centre (for effects)
     getRacketHead(target) {
       headLocal.set(0, rig.racket.userData.headY, 0);

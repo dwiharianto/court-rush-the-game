@@ -21,5 +21,5 @@ window.step=(sec)=>{for(let i=0;i<sec/dt;i++){t+=dt;const on=t<3;s.slide=q.get("
  const sp=Math.hypot(s.vx,s.vz)||1;let dx=-s.vz/sp,dz=s.vx/sp;if(!vx&&!vz){dx=1;dz=0;}
  if(view==='front'){dx=s.vx/sp;dz=s.vz/sp;}
  cam.position.set(s.x+dx*5,1.1,s.z+dz*5);cam.lookAt(s.x,0.9,s.z);r.render(scene,cam);return t;};
-window.__done=true;
+window.pose=()=>{const o={};for(const k of ["rShX","rShZ","rElbow","torsoX","torsoY","hipsYaw","lShX","lift"])o[k]=+c.lastPose?.[k]?.toFixed?.(2);return o;};window.__done=true;
 </script></body></html>

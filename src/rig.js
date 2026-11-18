@@ -344,8 +344,8 @@ export function createBodyRig(body, options = {}) {
     setJoint('upperleg01.R', euler(-p.rHip, 0, -p.rHipZ));
     setJoint('lowerleg01.L', euler(p.lKnee, 0, 0));
     setJoint('lowerleg01.R', euler(p.rKnee, 0, 0));
-    setJoint('foot.L', euler(p.lHip - p.lKnee, 0, 0));
-    setJoint('foot.R', euler(p.rHip - p.rKnee, 0, 0));
+    setJoint('foot.L', euler(p.lHip - p.lKnee + p.lAnkle, 0, 0)); // the sole level, plus the ankle
+    setJoint('foot.R', euler(p.rHip - p.rKnee + p.rAnkle, 0, 0));
     for (const n of ['upperleg02.L', 'upperleg02.R', 'lowerleg02.L', 'lowerleg02.R', 'upperarm02.L', 'upperarm02.R', 'lowerarm02.L', 'lowerarm02.R', 'pelvis.L', 'pelvis.R', 'spine05', 'shoulder01.L', 'shoulder01.R']) setJoint(n, q2.identity());
     // hips: height from the legs so the lower foot stays on the ground
     const rootBone = bones[byName.root];

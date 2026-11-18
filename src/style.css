@@ -212,3 +212,5 @@ body.customising #menu { opacity: 0; pointer-events: none; }
     background: rgba(8, 12, 18, 0.9); }
   #custom.hidden { transform: translateY(12px); }
 }
+
+.menu-credit { margin-top: 10px; font-size: 10.5px; line-height: 1.4; opacity: 0.5; text-align: center; }

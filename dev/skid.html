@@ -1,0 +1,32 @@
+<!doctype html><html><body>
+<script type="module">
+import * as THREE from 'three';
+import { loadBodies, getBody, loadKit, getKit } from '../src/body.js';
+import { createCharacter } from '../src/human.js';
+import { ANIM } from '../src/config.js';
+const gs = new URLSearchParams(location.search).get('gs'); if (gs) ANIM.gaitStride = +gs;
+await loadBodies(); await loadKit();
+// how fast the supporting (lower) foot slides over the ground at steady speeds
+const out = {};
+for (const [name, vx, vz] of [['walk 1.2', 0, -1.2], ['jog 3', 0, -3], ['run 4.5', 0, -4.5], ['sprint 6', 0, -6], ['back 1.8', 0, 1.8]]) {
+  const c = createCharacter({ body: getBody('male'), kit: getKit('male') });
+  const bones = c.object3d.children[0].skeleton.bones;
+  const fl = bones.find((b) => b.name === 'foot.L'), fr = bones.find((b) => b.name === 'foot.R');
+  const s = { x: 0, z: 0, vx, vz, facing: Math.PI, action: 'ready', actionT: 0, slide: false };
+  const dt = 1 / 120; const a = new THREE.Vector3(), b = new THREE.Vector3();
+  const rec = [[], []];
+  for (let i = 0; i < 120 * 4; i++) {
+    s.x += s.vx * dt; s.z += s.vz * dt; c.update(dt, s); c.object3d.updateMatrixWorld(true);
+    fl.getWorldPosition(a); fr.getWorldPosition(b);
+    if (i > 240) { rec[0].push(a.clone()); rec[1].push(b.clone()); }
+  }
+  let sum = 0, n = 0, contact = 0;
+  for (const r of rec) {
+    const floor = Math.min(...r.map((p) => p.y));
+    for (let i = 1; i < r.length; i++) if (r[i].y < floor + 0.03 && r[i - 1].y < floor + 0.03) { sum += Math.hypot(r[i].x - r[i - 1].x, r[i].z - r[i - 1].z) / dt; n++; }
+    contact += r.filter((p) => p.y < floor + 0.03).length / r.length;
+  }
+  out[name] = `${(sum / n).toFixed(2)} m/s on ${(50 * contact).toFixed(0)}% of frames`;
+}
+window.__out = out; window.__done = true;
+</script></body></html>
