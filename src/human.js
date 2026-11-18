@@ -23,6 +23,8 @@
 //   rkX/Y/Z, rkW     racket direction in the chest's frame, and how far to turn the
 //                    hand to it (captured strokes; 0 leaves the racket to the wrist keys)
 //   lift             extra hip height (jumps, idle bounce)
+//   groundW, clearance  0..1: place the body by its lowest point, clearance metres above
+//                    the court, instead of by the feet (dives, lying, kneeling)
 //   hipY             explicit hip height, used when plant is false (seated)
 import * as THREE from 'three';
 import { BODY, ANIM, SERVE_ANIM, SWING, SERVE as SERVE_CFG, DIVE as DIVE_CFG } from './config.js';
@@ -36,7 +38,7 @@ const POSE_KEYS = [
   'torsoX', 'torsoY', 'torsoZ', 'headX', 'headY',
   'lShX', 'rShX', 'lShZ', 'rShZ', 'lShY', 'rShY', 'lElbow', 'rElbow',
   'rWristX', 'rWristY', 'rWristZ', 'lGrip', 'lift', 'hipY',
-  'rkX', 'rkY', 'rkZ', 'rkW',
+  'rkX', 'rkY', 'rkZ', 'rkW', 'groundW', 'clearance',
 ];
 
 export function makePose(values = {}) {
@@ -567,36 +569,61 @@ const SMASH = [
 const MIRROR_PAIRS = [['lHip', 'rHip'], ['lHipZ', 'rHipZ'], ['lKnee', 'rKnee'], ['lAnkle', 'rAnkle']];
 const MIRROR_FLIP = ['hipsYaw', 'hipsRoll', 'torsoY', 'torsoZ', 'headY'];
 
-// Dive: a push off the far leg, a full-length lay-out toward the ball with the racket
-// at full stretch (contact), a landing on the side and a slide, then up via one knee.
-// Made for a forehand dive to the right; the backhand one is its mirror, with the
-// racket arm reaching across the body.
+// Dive, made for a forehand dive to the right (the backhand one mirrors it). The body
+// is placed by its lowest point through the dive (groundW): it pushes off the outside
+// leg, lays out full length with the racket at full stretch (contact), comes down on
+// the forearm and hip and slides on its side, then sits up onto the hip, comes up onto
+// one knee with the other foot planted, and stands back into the ready stance.
 const DV = DIVE_CFG.duration;
-const DIVE_FH = [
-  key(0, {}),
-  key(0.08, { lHip: 0.75, lKnee: 1.25, lHipZ: 0.15, rHip: 0.35, rKnee: 0.55, rHipZ: 0.55, torsoX: 0.45, torsoZ: 0.25, hipsRoll: 0.2,
-    rShX: 0.3, rShZ: 1.0, rElbow: 0.7, lShZ: 0.5, lElbow: 0.9, headY: -0.3 }),
-  key(C, { lHip: 0.05, lKnee: 0.15, lHipZ: 0.25, rHip: 0.55, rKnee: 0.65, rHipZ: 0.2, torsoX: 0.2, torsoZ: 0.3, hipsRoll: 0.95, lift: 0.05,
-    rShX: 0.25, rShZ: 2.2, rShY: 0.1, rElbow: 0.1, rWristX: 0.2, lShX: 0.5, lShZ: 1.1, lElbow: 0.6, headY: -0.5, headX: -0.2 }),
-  key(0.3, { lHip: 0.2, lKnee: 0.3, lHipZ: 0.3, rHip: 0.5, rKnee: 0.7, rHipZ: 0.15, torsoX: 0.15, torsoZ: 0.25, hipsRoll: 1.3, lift: -0.3,
-    rShX: 0.3, rShZ: 2.5, rShY: 0.2, rElbow: 0.15, rWristX: 0.3, lShX: 1.0, lShZ: 0.8, lElbow: 0.9, headY: -0.4, headX: -0.3 }),
-  key(DIVE_CFG.flight, { lHip: 0.3, lKnee: 0.45, lHipZ: 0.25, rHip: 0.45, rKnee: 0.8, rHipZ: 0.1, torsoX: 0.1, torsoZ: 0.2, hipsRoll: 1.42, lift: -0.52,
-    rShX: 0.35, rShZ: 2.6, rShY: 0.2, rElbow: 0.25, rWristX: 0.3, lShX: 1.3, lShZ: 0.6, lElbow: 1.2, headY: -0.3, headX: -0.4 }),
-  key(0.85, { lHip: 0.35, lKnee: 0.55, lHipZ: 0.2, rHip: 0.5, rKnee: 0.85, rHipZ: 0.1, torsoX: 0.1, torsoZ: 0.15, hipsRoll: 1.45, lift: -0.55,
-    rShX: 0.45, rShZ: 2.4, rShY: 0.2, rElbow: 0.5, rWristX: 0.3, lShX: 1.2, lShZ: 0.5, lElbow: 1.3, headY: -0.1, headX: -0.4 }),
-  // up onto one knee, pushing off the ground with the free hand
-  key(1.15, { lHip: 1.4, lKnee: 2.1, lHipZ: 0.2, rHip: 0.9, rKnee: 2.3, rHipZ: 0.25, torsoX: 0.7, torsoZ: 0.1, hipsRoll: 0.55, lift: -0.42,
-    rShX: 0.6, rShZ: 0.6, rElbow: 0.9, lShX: 0.6, lShZ: 0.9, lElbow: 0.3, headX: -0.3 }),
-  key(1.38, { ...READY, lHip: 1.0, rHip: 1.0, lKnee: 1.5, rKnee: 1.5, torsoX: 0.5, hipsRoll: 0.1 }),
-  key(DV, {}),
+const DIVE_ARMS_FH = [ // racket arm and free arm through the dive, by key
+  {}, // ready
+  { rShX: 0.4, rShZ: 0.9, rElbow: 0.8, lShZ: 0.45, lElbow: 0.9 }, // load
+  { rShX: 0.3, rShZ: 1.6, rElbow: 0.35, lShX: 0.4, lShZ: 0.9, lElbow: 0.6 }, // take-off
+  { rShX: 0.25, rShZ: 2.25, rShY: 0.1, rElbow: 0.08, rWristX: 0.2, lShX: 0.6, lShZ: 1.0, lElbow: 0.5 }, // contact
+  { rShX: 0.3, rShZ: 2.45, rShY: 0.15, rElbow: 0.15, rWristX: 0.3, lShX: 1.0, lShZ: 0.8, lElbow: 0.8 }, // coming down
+  { rShX: 0.35, rShZ: 2.55, rShY: 0.2, rElbow: 0.35, rWristX: 0.3, lShX: 1.25, lShZ: 0.55, lElbow: 1.1 }, // landing
+  { rShX: 0.45, rShZ: 2.4, rShY: 0.2, rElbow: 0.55, rWristX: 0.3, lShX: 1.2, lShZ: 0.5, lElbow: 1.2 }, // sliding
+  { rShX: 0.3, rShZ: 1.1, rElbow: 0.3, rWristX: -0.2, lShX: 0.9, lShZ: 0.3, lElbow: 1.0 }, // sitting up, racket hand on the court
+  { rShX: 0.35, rShZ: 0.55, rElbow: 0.6, lShX: 0.6, lShZ: 0.35, lElbow: 1.1 }, // on one knee
+  { rShX: 0.4, rShZ: 0.3, rElbow: 1.1, lShX: 0.45, lShZ: 0.25, lElbow: 1.2 }, // rising
+  {}, // ready
+];
+const DIVE_BODY = [ // legs, trunk and placement (forehand side), by key
+  [0, {}],
+  [0.07, { lHip: 0.8, lKnee: 1.3, lHipZ: 0.1, rHip: 0.45, rKnee: 0.95, rHipZ: 0.5, torsoX: 0.45, torsoZ: 0.25, hipsRoll: 0.12, headY: -0.3, groundW: 0.2 }],
+  [0.12, { lHip: 0.35, lKnee: 0.5, lHipZ: 0.2, rHip: 0.55, rKnee: 0.75, rHipZ: 0.35, torsoX: 0.3, torsoZ: 0.3, hipsRoll: 0.5, headY: -0.45, groundW: 0.8, clearance: 0.12 }],
+  [C, { lHip: 0.0, lKnee: 0.15, lHipZ: 0.2, rHip: 0.4, rKnee: 0.6, rHipZ: 0.1, torsoX: 0.15, torsoZ: 0.25, hipsRoll: 0.95, headY: -0.5, headX: -0.2, groundW: 1, clearance: 0.3 }],
+  [0.29, { lHip: 0.1, lKnee: 0.3, lHipZ: 0.08, rHip: 0.35, rKnee: 0.65, rHipZ: 0.05, torsoX: 0.12, torsoZ: 0.2, hipsRoll: 1.25, headY: -0.4, headX: -0.3, groundW: 1, clearance: 0.12 }],
+  [DIVE_CFG.flight, { lHip: 0.25, lKnee: 0.45, lHipZ: -0.08, rHip: 0.3, rKnee: 0.7, rHipZ: 0.02, torsoX: 0.1, torsoZ: 0.18, hipsRoll: 1.42, headY: -0.3, headX: -0.4, groundW: 1, clearance: 0 }],
+  [0.72, { lHip: 0.4, lKnee: 0.7, lHipZ: -0.1, rHip: 0.35, rKnee: 0.85, rHipZ: 0.02, torsoX: 0.15, torsoZ: 0.12, hipsRoll: 1.45, headY: -0.1, headX: -0.45, groundW: 1, clearance: 0 }],
+  // sit up onto the right hip, legs folding, trunk coming upright over the hand on the court
+  [0.98, { lHip: 0.95, lKnee: 1.35, lHipZ: 0.2, rHip: 0.8, rKnee: 1.9, rHipZ: 0.25, torsoX: 0.35, torsoZ: -0.75, hipsRoll: 0.85, headX: -0.25, groundW: 1, clearance: 0 }],
+  // up onto the right knee, left foot planted in front
+  [1.17, { lHip: 1.35, lKnee: 1.45, lHipZ: 0.15, rHip: 0.05, rKnee: 1.6, rHipZ: 0.1, rAnkle: 0.6, torsoX: 0.3, torsoZ: -0.1, hipsRoll: 0.12, headX: -0.15, groundW: 1, clearance: 0 }],
+  // driving up off the front foot
+  [1.36, { lHip: 0.75, lKnee: 0.95, lHipZ: 0.15, rHip: 0.35, rKnee: 0.85, rHipZ: 0.15, torsoX: 0.35, hipsRoll: 0.02, groundW: 0.3, clearance: 0 }],
+  [DV, {}],
+];
+const DIVE_FH = DIVE_BODY.map(([t, body], i) => key(t, { ...body, ...DIVE_ARMS_FH[i] }));
+// the backhand dive, to the left: legs and trunk mirrored; the racket arm reaches across
+// the body and the free (left) arm takes the landing and the push up
+const DIVE_ARMS_BH = [
+  {},
+  { rShX: 0.9, rShY: 0.6, rShZ: 0.3, rElbow: 0.7, lShZ: 0.6, lElbow: 0.7 },
+  { rShX: 1.2, rShY: 0.9, rShZ: 0.3, rElbow: 0.35, lShX: 0.3, lShZ: 1.2, lElbow: 0.4 },
+  { rShX: 1.35, rShY: 1.1, rShZ: 0.35, rElbow: 0.15, lShX: 0.3, lShZ: 1.4, lElbow: 0.3 },
+  { rShX: 1.4, rShY: 1.15, rShZ: 0.4, rElbow: 0.2, lShX: 0.4, lShZ: 1.7, lElbow: 0.3 },
+  { rShX: 1.45, rShY: 1.1, rShZ: 0.4, rElbow: 0.35, lShX: 0.4, lShZ: 2.0, lElbow: 0.4 },
+  { rShX: 1.4, rShY: 1.0, rShZ: 0.4, rElbow: 0.5, lShX: 0.45, lShZ: 1.9, lElbow: 0.5 },
+  { rShX: 1.0, rShY: 0.4, rShZ: 0.3, rElbow: 0.9, lShX: 0.3, lShZ: 1.1, lElbow: 0.3 },
+  { rShX: 0.6, rShZ: 0.35, rElbow: 1.0, lShX: 0.35, lShZ: 0.55, lElbow: 0.6 },
+  { rShX: 0.45, rShZ: 0.25, rElbow: 1.15, lShX: 0.45, lShZ: 0.3, lElbow: 1.1 },
+  {},
 ];
 const DIVE_BH = DIVE_FH.map((k, i) => {
   const pose = mirrorLegs(makePose(), k.pose);
-  // the racket arm reaches across the body to the left; the free arm out to that side
-  const reachW = [0, 0.4, 1, 1, 1, 0.9, 0.3, 0, 0][i] ?? 0;
-  pose.rShX += (1.35 - pose.rShX) * reachW; pose.rShY += (1.1 - pose.rShY) * reachW;
-  pose.rShZ += (0.35 - pose.rShZ) * reachW; pose.rElbow += (0.2 - pose.rElbow) * reachW;
-  pose.lShX += (0.3 - pose.lShX) * reachW; pose.lShZ += (1.3 - pose.lShZ) * reachW; pose.lElbow += (0.4 - pose.lElbow) * reachW;
+  for (const key of ['rShX', 'rShY', 'rShZ', 'rElbow', 'rWristX', 'lShX', 'lShY', 'lShZ', 'lElbow']) pose[key] = READY[key] || 0;
+  Object.assign(pose, DIVE_ARMS_BH[i]);
   return { t: k.t, pose };
 });
 

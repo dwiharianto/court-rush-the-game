@@ -377,6 +377,29 @@ export function createBodyRig(body, options = {}) {
     setJoint('wrist.R', euler(p.rWristX, p.rWristY, p.rWristZ));
     curlFingers('R', 1, 1); // gripping the racket
     curlFingers('L', 0.35 + 0.75 * clamp(p.lGrip, 0, 1), 0.4 + 0.5 * clamp(p.lGrip, 0, 1));
+    if (plant) groundBody(p, rootBone);
+  }
+
+  // Ground contact. Normally the feet set the height (above). With groundW the body is
+  // instead placed by its lowest point, `clearance` metres above the court (dives:
+  // airborne, then lying, sitting and kneeling on it). Either way nothing goes through it.
+  const contacts = [
+    ['foot.L', legs.ankle * 0.9], ['foot.R', legs.ankle * 0.9],
+    ['lowerleg01.L', 0.055], ['lowerleg01.R', 0.055], ['upperleg01.L', 0.09], ['upperleg01.R', 0.09],
+    ['root', 0.1], ['spine03', 0.11], ['spine01', 0.12], ['head', 0.09],
+    ['upperarm01.L', 0.07], ['upperarm01.R', 0.07], ['lowerarm01.L', 0.045], ['lowerarm01.R', 0.045],
+    ['wrist.L', 0.035], ['wrist.R', 0.035],
+  ].map(([n, r]) => [bones[byName[n]], r]);
+  function groundBody(p, rootBone) {
+    object3d.updateMatrixWorld(true);
+    let low = Infinity;
+    for (const [b, r] of contacts) { b.getWorldPosition(v3); low = Math.min(low, v3.y - object3d.position.y - r); }
+    let dy = p.groundW > 0 ? (p.clearance - low) * Math.min(1, p.groundW) : 0;
+    if (low + dy < 0) dy = -low;
+    if (Math.abs(dy) > 1e-5) {
+      rootBone.position.y += dy;
+      rootBone.updateMatrixWorld(true);
+    }
   }
 
   // two-bone IK: the left hand onto the racket handle, blended by w
