@@ -22,6 +22,7 @@
 //   hipY             explicit hip height, used when plant is false (seated)
 import * as THREE from 'three';
 import { BODY, ANIM, SERVE_ANIM, SWING } from './config.js';
+import { createBodyRig } from './rig.js';
 
 const POSE_KEYS = [
   'lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'hipsYaw',
@@ -92,7 +93,7 @@ function lathe(profile, mat, scaleZ = 1, seg = 12, doubleSided = false) {
 }
 
 // where the left hand holds the handle in a two-handed grip, racket space
-const GRIP_POINT = new THREE.Vector3(0, -0.105, 0);
+export const GRIP_POINT = new THREE.Vector3(0, -0.105, 0);
 const clampUnit = (v) => Math.max(-1, Math.min(1, v));
 const ik = {
   s: new THREE.Vector3(), t: new THREE.Vector3(), d: new THREE.Vector3(), pole: new THREE.Vector3(),
@@ -101,7 +102,7 @@ const ik = {
   m: new THREE.Matrix4(), q: new THREE.Quaternion(), qp: new THREE.Quaternion(),
 };
 
-function buildRacket(frameColor, gripColor) {
+export function buildRacket(frameColor, gripColor) {
   const g = new THREE.Group();
   const gripMat = new THREE.MeshStandardMaterial({ color: gripColor, roughness: 0.9 });
   const frameMat = new THREE.MeshStandardMaterial({ color: frameColor, roughness: 0.35, metalness: 0.2 });
@@ -526,9 +527,9 @@ const SERVE = [
   key(SC * 0.55, { rShX: -1.5, rShZ: 1.9, rElbow: 2.4, rShY: -0.3, torsoY: -0.1, hipsYaw: -1.0, torsoZ: 0.15,
     lShX: 1.8, lElbow: 0.8, lHip: 0.25, rHip: 0.15, lKnee: 0.4, rKnee: 0.4 }, TROPHY),
   // contact: airborne, arm fully extended overhead, hips and chest uncoiled toward the net
-  key(SC, { hipsYaw: -0.35, torsoY: 0.9, torsoX: 0.3, torsoZ: -0.2, headX: -0.5, headY: 0.2,
+  key(SC, { hipsYaw: -0.35, torsoY: 0.5, torsoX: 0.3, torsoZ: -0.2, headX: -0.5, headY: 0.2,
     lHip: 0.05, rHip: 0.02, lHipZ: 0.1, rHipZ: 0.1, lKnee: 0.06, rKnee: 0.1, lift: 0.26,
-    rShX: 0.2, rShZ: 3.1, rShY: 0.3, rElbow: 0.05, rWristX: 0.2,
+    rShX: 0.2, rShZ: 2.7, rShY: 0.3, rElbow: 0.05, rWristX: 0.2,
     lShX: 0.5, lShZ: 0.1, lElbow: 1.5 }, TROPHY),
   // follow-through: land on the front foot inside the court, back leg kicking up behind
   key(SC + 0.13, { hipsYaw: 0.3, torsoY: 0.5, torsoX: 0.6, torsoZ: 0, headX: -0.2, headY: -0.2,
@@ -600,7 +601,8 @@ function mirrorLegs(out, pose) {
 const smooth = (cur, target, rate, dt) => cur + (target - cur) * Math.min(1, dt * rate);
 
 export function createCharacter(options = {}) {
-  const rig = createFigure({ racket: true, ...options });
+  // a MakeHuman body when one is given (see rig.js), else the code-built figure
+  const rig = options.body ? createBodyRig(options.body, options) : createFigure({ racket: true, ...options });
   const loco = makePose(), run = makePose(), idle = makePose(), shuffle = makePose(), clip = makePose(), out = makePose();
   const slidePose = makePose(), tmp = makePose();
   let time = Math.random() * 10;

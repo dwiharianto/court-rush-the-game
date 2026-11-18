@@ -18,7 +18,7 @@ Pick Clay, Grass or Hard court on the start screen. Clay is slow with a high bou
 
 ## Your player
 
-Customise player, on the start screen, opens a panel with a close-up of your player: name, shirt, shorts, shoes, headwear, skin tone, hair colour and hair style. Choices are saved on the device. Each match the CPU gets an invented name (never a real player's) and an outfit that does not clash with yours.
+Customise player, on the start screen, opens a panel with a close-up of your player: name, body (male or female), shirt, shorts, shoes, headwear, skin tone, hair colour and hair style. Choices are saved on the device. Each match the CPU gets an invented name (never a real player's) and an outfit that does not clash with yours.
 
 ## Controls
 
@@ -48,3 +48,7 @@ Customise player, on the start screen, opens a panel with a close-up of your pla
 | `src/soundgen.js` | Builds the crowd bed, applause, whistles and reverb as sample buffers at startup |
 | `src/main.js` | Headless game core (`createGame`) and the browser loop |
 | `test/` | Scripted player, rules test, difficulty report |
+
+## Credits
+
+The player bodies are built from MakeHuman data: the hm08 base mesh, the default skeleton and skin weights, and the macro targets that shape the athletic male and female builds. All of it is CC0 1.0 (public domain), released by the MakeHuman team (makehumancommunity.org) in 2020. `tools/fetch-makehuman.sh` downloads it and `tools/build-bodies.mjs` turns it into `src/assets/body-male.json` and `body-female.json`; `src/rig.js` drives those bodies with the game's own poses. The kit, hair, shoes, headwear and racket are made in code.

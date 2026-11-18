@@ -546,7 +546,12 @@ async function boot() {
   // invented name and a non-clashing look for each match.
   let me = loadProfile();
   let cpu = cpuOpponent(me);
-  const views = [createCharacter(kitFor(me)), createCharacter(kitFor(cpu, 0xb3261e))];
+  // MakeHuman bodies (see rig.js); if they cannot load, the code-built figures stand in
+  const { loadBodies, getBody } = await import('./body.js');
+  let bodiesReady = false;
+  try { await loadBodies(); bodiesReady = true; } catch (err) { console.warn('Player bodies did not load:', err); }
+  const look = (p, racketColor) => ({ ...kitFor(p, racketColor), body: bodiesReady ? getBody(p.build) : null });
+  const views = [createCharacter(look(me)), createCharacter(look(cpu, 0xb3261e))];
   world.scene.add(views[0].object3d, views[1].object3d);
   function rebuildView(side, kit) {
     world.scene.remove(views[side].object3d);
@@ -562,7 +567,7 @@ async function boot() {
   function changeMe(p) {
     me = sanitize(p);
     saveProfile(me);
-    rebuildView(0, kitFor(me));
+    rebuildView(0, look(me));
     hud.setNames(me.name, cpu.name);
   }
   hud.onCustomChange(changeMe);
@@ -593,7 +598,7 @@ async function boot() {
     applySurface(surface);
     game = createGame({ difficulty, surface });
     cpu = cpuOpponent(me); // a new opponent each match
-    rebuildView(1, kitFor(cpu, 0xb3261e));
+    rebuildView(1, look(cpu, 0xb3261e));
     hud.setNames(me.name, cpu.name);
     game.start();
     matchTime = 0;

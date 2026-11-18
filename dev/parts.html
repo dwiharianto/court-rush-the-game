@@ -1,0 +1,21 @@
+<!doctype html><html><body style="margin:0;background:#334">
+<script type="module">
+import * as THREE from 'three';
+import { loadBodies } from '../src/body.js';
+const r=new THREE.WebGLRenderer({antialias:true});r.setSize(1200,700);document.body.appendChild(r.domElement);
+const sc=new THREE.Scene();sc.background=new THREE.Color(0x445566);
+sc.add(new THREE.HemisphereLight(0xffffff,0x555555,1.6));const d=new THREE.DirectionalLight(0xffffff,1.8);d.position.set(2,4,5);sc.add(d);
+const q=new URLSearchParams(location.search);
+const cam=new THREE.PerspectiveCamera(Number(q.get('fov')||28),1200/700,0.1,100);
+const look=(q.get('look')||'0,0.95,0').split(',').map(Number);const pos=(q.get('cam')||'0,1.0,6').split(',').map(Number);
+cam.position.set(...pos);cam.lookAt(...look);
+const PC=[0xe8b48a,0x3070ff,0xff8030,0x30d0ff,0x80ff80,0xffff60,0xa060ff,0xff60c0,0x404040,0xffffff,0x6a3a1a,0x101010,0xff2020];
+const B=await loadBodies();
+['male','female'].forEach((g,k)=>{const b=B[g];const geo=new THREE.BufferGeometry();
+ geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(b.arrays.position),3));geo.setIndex(new THREE.BufferAttribute(new Uint16Array(b.arrays.index),1));
+ const col=new Float32Array(b.arrays.part.length*3);const c=new THREE.Color();
+ for(let i=0;i<b.arrays.part.length;i++){c.setHex(PC[b.arrays.part[i]]);if(q.get('t')){const t=b.arrays.along[i]/255;c.multiplyScalar(0.4+0.6*t);}col.set([c.r,c.g,c.b],i*3);}
+ geo.setAttribute('color',new THREE.BufferAttribute(col,3));geo.computeVertexNormals();
+ const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.7}));m.position.x=(k-0.5)*1.0;m.rotation.y=Number(q.get('ry')||0);sc.add(m);});
+r.render(sc,cam);window.__done=true;
+</script></body></html>

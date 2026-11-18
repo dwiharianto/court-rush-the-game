@@ -325,7 +325,7 @@ export const SERVE = {
   readyDelay: 0.5, // before the human can toss
   cpuDelay: 1.3, // before the CPU tosses
   handY: 1.13, // ball held in the left hand, out in front of the front hip
-  handSide: 0.27, // toward the hitting side (the stance is side-on)
+  handSide: 0.37, // toward the hitting side (the stance is side-on)
   handFront: 0.48, // toward the net
   tossY0: 1.45, // release height
   tossApex: 3.0, // top of the toss

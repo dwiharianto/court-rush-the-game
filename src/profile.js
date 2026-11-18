@@ -8,11 +8,12 @@ export const PALETTE = {
   shorts: [0x2452a6, 0xf0f0ec, 0x1b1f27, 0x6b7280, 0x0f5f4c, 0xc23a32],
   shoes: [0xf4f4f4, 0x1b1f27, 0xd8f23a, 0x2f7de1, 0xe0464b],
 };
+export const BUILDS = [['male', 'Male'], ['female', 'Female']];
 export const HAIR_STYLES = [['short', 'Short'], ['buzz', 'Buzz'], ['long', 'Ponytail'], ['curly', 'Curly'], ['none', 'None']];
 export const HEADWEAR = [['none', 'None'], ['cap', 'Cap'], ['headband', 'Headband']];
 
 export const DEFAULT_PROFILE = {
-  name: 'L. MARLOW',
+  name: 'L. MARLOW', build: 'male',
   skin: 0xd9a37c, hair: 0x2a1d14, hairStyle: 'short', headwear: 'none',
   shirt: 0x2f9e58, shorts: 0x2452a6, shoes: 0xf4f4f4,
 };
@@ -40,6 +41,7 @@ export function sanitize(p = {}) {
   const d = DEFAULT_PROFILE;
   return {
     name: cleanName(p.name),
+    build: pick(BUILDS.map((b) => b[0]), p.build, d.build),
     skin: pick(PALETTE.skin, p.skin, d.skin),
     hair: pick(PALETTE.hair, p.hair, d.hair),
     hairStyle: pick(HAIR_STYLES.map((h) => h[0]), p.hairStyle, d.hairStyle),
@@ -62,6 +64,7 @@ export function saveProfile(p) {
 export function kitFor(p, racketColor = 0x16181c) {
   const dark = [0x1b1f27, 0x1d3f8f, 0x5b2d82].includes(p.shirt);
   return {
+    build: p.build,
     skin: p.skin, hair: p.hair, hairStyle: p.hairStyle, headwear: p.headwear,
     headwearColor: dark ? 0xf4f4f4 : p.shirt,
     shirt: p.shirt, shorts: p.shorts, shoes: p.shoes, racketColor,
@@ -71,7 +74,7 @@ export function kitFor(p, racketColor = 0x16181c) {
 export function randomProfile(rng = Math.random) {
   const any = (list) => list[Math.floor(rng() * list.length)];
   return sanitize({
-    name: DEFAULT_PROFILE.name,
+    name: DEFAULT_PROFILE.name, build: any(BUILDS)[0],
     skin: any(PALETTE.skin), hair: any(PALETTE.hair), hairStyle: any(HAIR_STYLES)[0], headwear: any(HEADWEAR)[0],
     shirt: any(PALETTE.shirt), shorts: any(PALETTE.shorts), shoes: any(PALETTE.shoes),
   });
