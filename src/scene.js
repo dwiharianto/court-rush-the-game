@@ -433,6 +433,13 @@ function buildArena(scene) {
   scene.add(bodies, heads);
 
   return {
+    // the event name on the banner above the back wall
+    setTourName(name) {
+      const old = banner.material.map;
+      banner.material.map = boardTexture(name, { bg: '#0e2a47', fg: '#ffffff', w: 1024, h: 212, sub: 'COURT RUSH WORLD TOUR' });
+      banner.material.needsUpdate = true;
+      if (old) old.dispose();
+    },
     setSpeed: (kmh) => speed.draw(String(Math.round(kmh)), 'km/h'),
     setClock: (seconds) => {
       const s = Math.floor(seconds);
@@ -802,7 +809,7 @@ export function createWorld() {
 
   return {
     scene, camera, resize, updateCamera,
-    setSpeed: boards.setSpeed, setClock: boards.setClock,
+    setSpeed: boards.setSpeed, setClock: boards.setClock, setTourName: boards.setTourName,
     updateBall: ballView.update, addBounceMark: (x, z) => { if (marks) ballView.addMark(x, z); },
     addSlideTrail: (...a) => { if (marks) slideFx.addTrail(...a); },
     slideDust: (...a) => { if (marks) slideFx.puff(...a); },

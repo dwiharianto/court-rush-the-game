@@ -569,3 +569,35 @@ test('match statistics add up', () => {
   assert.ok(s.fastestServe[0] > 100 && s.fastestServe[1] > 100, 'serve speeds recorded');
   assert.ok(s.longestRally >= 2);
 });
+
+test('tournaments: a draw of eight, three rounds, a champion', async () => {
+  const { createTournament, nextOpponent, recordResult, levelFor, roundName, bracket } = await import('../src/tournament.js');
+  for (const seed of [1, 2, 3, 4]) {
+    const t = createTournament({ eventId: 'ashbridge', difficulty: 'normal', gamesToWin: 3, playerName: 'L. MARLOW', seed });
+    assert.equal(t.surface, 'grass');
+    assert.equal(new Set(t.entrants.map((e) => e.name)).size, 8, 'eight different players');
+    assert.equal(t.entrants.filter((e) => !e.cpu).length, 1, 'the player is in the draw once');
+    // win every match
+    const seen = new Set();
+    for (let r = 0; r < 3; r++) {
+      assert.equal(roundName(t), ['QUARTER-FINAL', 'SEMI-FINAL', 'FINAL'][r]);
+      assert.equal(levelFor(t), r === 2 ? 'hard' : 'normal', 'the final is a level up');
+      const opp = nextOpponent(t);
+      assert.ok(opp && opp.cpu && !seen.has(opp.name), 'a new CPU opponent each round');
+      seen.add(opp.name);
+      recordResult(t, true, [3, 1]);
+    }
+    assert.equal(t.status, 'won');
+    assert.equal(nextOpponent(t), null);
+    const b = bracket(t);
+    assert.deepEqual(b.map((r) => r.matches.length), [4, 2, 1]);
+    assert.ok(b.every((r) => r.matches.every((m) => m.winner)), 'every match has a result');
+    // lose in the semi-final: the draw is still played out
+    const u = createTournament({ eventId: 'porto', difficulty: 'easy', gamesToWin: 6, playerName: 'L. MARLOW', seed: seed + 10 });
+    recordResult(u, true, [6, 2]);
+    recordResult(u, false, [4, 6]);
+    assert.equal(u.status, 'lost');
+    assert.ok(bracket(u)[2].matches[0].winner, 'the final was simulated');
+    assert.deepEqual(JSON.parse(JSON.stringify(u)), u, 'a tournament is plain data (saved and resumed)');
+  }
+});

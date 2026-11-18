@@ -278,3 +278,29 @@ body.touch #challenge-btn { bottom: auto; top: max(70px, env(safe-area-inset-top
   font-size: 9px; font-weight: 800; letter-spacing: 0.3em; color: rgba(255, 255, 255, 0.85); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 #power.max { box-shadow: 0 0 0 2px #ff6b5e, 0 4px 18px rgba(0, 0, 0, 0.45); }
+
+/* Modes, tournament events and the draw */
+.menu-levels.hidden, #bracket.hidden, #abandon.hidden { display: none; }
+.menu-events button { display: flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1.15; }
+.menu-events button small { font-size: 10px; letter-spacing: 0.14em; opacity: 0.65; text-transform: uppercase; }
+.menu-levels button:disabled { opacity: 0.45; cursor: default; }
+#abandon { margin-top: 8px; background: transparent; border: 1px solid rgba(255, 255, 255, 0.18); color: #cfd8e3; font-size: 12px; padding: 8px; }
+#bracket { margin: 10px 0 4px; background: rgba(10, 14, 20, 0.88); border-radius: 4px; padding: 8px; text-align: left; }
+.br-title { font-size: 11px; letter-spacing: 0.16em; color: #d8f23a; font-weight: 800; margin-bottom: 6px; text-align: center; }
+.br-rounds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; align-items: center; }
+.br-round { display: flex; flex-direction: column; gap: 6px; justify-content: space-around; height: 100%; }
+.br-rt { font-size: 9px; letter-spacing: 0.14em; color: #9fb3c8; font-weight: 700; text-align: center; }
+.br-round.current .br-rt { color: #d8f23a; }
+.br-match { position: relative; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 3px; font-size: 10px; font-weight: 600; }
+.br-round.current .br-match { border-color: rgba(216, 242, 58, 0.45); }
+.br-match > div { padding: 2px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #cfd8e3; }
+.br-match > div + div { border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.br-match .win { color: #fff; font-weight: 800; }
+.br-match .lose { color: #6f7f90; }
+.br-match .you { color: #d8f23a; }
+.br-match .you.lose { color: #8a9a3a; }
+.br-match span { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font-size: 9px; color: #9fb3c8; background: rgba(10, 14, 20, 0.9); padding: 0 3px; }
+.br-tbd { font-size: 10px; color: #6f7f90; text-align: center; }
+@media (max-width: 560px) { .br-match { font-size: 9px; } }
+#menu.has-bracket .stats { max-height: min(26vh, 240px); }
+#menu.has-bracket .menu-controls { display: none; } /* the draw takes the controls' place */

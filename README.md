@@ -34,6 +34,7 @@ Customise player, on the start screen, opens a panel with a close-up of your pla
 - Mistimed shots can fly low and clip the tape: a net cord may trickle over or drop back. A serve that clips the net and lands in the box is a let and is replayed.
 - Serve: press once to toss, again near the top of the toss.
 - Match statistics show on the pause screen and when the match ends: points won, aces, double faults, first serve percentage, points won on first and second serve, fastest serve, break points, winners, unforced and forced errors, net points, distance run, dives, challenges, longest rally and match time. An error counts as forced when it was played diving, sliding or at full stretch.
+- Modes: Exhibition (a single match on the court you pick) or Tournament: an eight-player knockout draw at one of three invented events (Porto Velano Open on clay, Ashbridge Lawn Championships on grass, Harbour City Masters on hard court) against seven seeded CPU opponents with invented names. Win the quarter-final, semi-final and final; the final is played one difficulty level up. The rest of the draw is simulated, the bracket shows on the menu, and progress is saved on the device so a tournament can be continued later (or abandoned). Match length: short (first to 3 games) or standard (first to 6), win by 2.
 - P or Esc pauses. The game also pauses when the tab loses focus. M turns sound on or off.
 - Touch devices get a stick and HIT, SLICE, LOB buttons.
 

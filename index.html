@@ -82,6 +82,16 @@
           <div><b>At the net</b><span>HIT volleys, SLICE drop volleys</span></div>
           <div><b>Serve</b><span>Tap once to toss, again at the top</span></div>
         </div>
+        <div class="menu-levels menu-modes" id="menu-modes" aria-label="Mode">
+          <button data-mode="exhibition" class="on">Exhibition</button>
+          <button data-mode="tournament">Tournament</button>
+        </div>
+        <div class="menu-levels menu-events hidden" id="menu-events" aria-label="Tournament">
+          <button data-event="porto" class="on">Porto Velano<small>Clay</small></button>
+          <button data-event="ashbridge">Ashbridge<small>Grass</small></button>
+          <button data-event="harbour">Harbour City<small>Hard</small></button>
+        </div>
+        <div id="bracket" class="hidden"></div>
         <div class="menu-levels menu-surfaces" id="menu-surfaces" aria-label="Court surface">
           <button data-surface="clay" class="on">Clay</button>
           <button data-surface="grass">Grass</button>
@@ -92,9 +102,14 @@
           <button data-level="normal" class="on">Normal</button>
           <button data-level="hard">Hard</button>
         </div>
+        <div class="menu-levels" id="menu-length" aria-label="Match length">
+          <button data-len="3">Short: first to 3</button>
+          <button data-len="6" class="on">Standard: first to 6</button>
+        </div>
         <button id="customise" type="button">Customise player</button>
         <button id="play">Play</button>
-        <div class="menu-foot">First to 6 games, win by 2</div>
+        <button id="abandon" type="button" class="hidden">Abandon tournament</button>
+        <div class="menu-foot" id="menu-foot">First to 6 games, win by 2</div>
         <div class="menu-credit">Free to play, non-commercial. Running: Bandai Namco Research Motion Dataset (CC BY-NC 4.0). Strokes: Tennis-MoCap, Pulgarin-Giraldo et al. (CC BY-SA 3.0). Bodies and kit: MakeHuman (CC0). Calls: Piper TTS, LibriTTS voice (CC BY 4.0).</div>
       </div>
     </div>

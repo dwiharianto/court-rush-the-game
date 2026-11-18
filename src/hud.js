@@ -57,7 +57,36 @@ export function createHud(doc = document) {
     if (surfaceHandler) surfaceHandler(name);
   };
   for (const b of surfaceButtons) b.addEventListener('click', () => pickSurface(b.dataset.surface));
-  playButton.addEventListener('click', () => { if (playHandler) playHandler(level, surface); });
+  // mode (exhibition or tournament), the tournament event, and the match length
+  const modeButtons = [...doc.querySelectorAll('#menu-modes button')];
+  const eventButtons = [...doc.querySelectorAll('#menu-events button')];
+  const lengthButtons = [...doc.querySelectorAll('#menu-length button')];
+  const eventsEl = doc.getElementById('menu-events'), surfacesEl = doc.getElementById('menu-surfaces');
+  const bracketEl = doc.getElementById('bracket'), abandonButton = doc.getElementById('abandon');
+  let mode = 'exhibition', eventId = 'porto', length = 6, modeHandler = null, abandonHandler = null;
+  const pickMode = (m) => {
+    mode = m;
+    for (const o of modeButtons) o.classList.toggle('on', o.dataset.mode === m);
+    surfacesEl.classList.toggle('hidden', m === 'tournament');
+    eventsEl.classList.toggle('hidden', m !== 'tournament');
+    if (modeHandler) modeHandler({ mode, eventId, length });
+  };
+  const pickEvent = (id) => {
+    eventId = id;
+    for (const o of eventButtons) o.classList.toggle('on', o.dataset.event === id);
+    if (modeHandler) modeHandler({ mode, eventId, length });
+  };
+  const pickLength = (n) => {
+    length = n;
+    for (const o of lengthButtons) o.classList.toggle('on', +o.dataset.len === n);
+    doc.getElementById('menu-foot').textContent = `First to ${n} games, win by 2`;
+    if (modeHandler) modeHandler({ mode, eventId, length });
+  };
+  for (const b of modeButtons) b.addEventListener('click', () => pickMode(b.dataset.mode));
+  for (const b of eventButtons) b.addEventListener('click', () => pickEvent(b.dataset.event));
+  for (const b of lengthButtons) b.addEventListener('click', () => pickLength(+b.dataset.len));
+  abandonButton.addEventListener('click', () => { if (abandonHandler) abandonHandler(); });
+  playButton.addEventListener('click', () => { if (playHandler) playHandler({ level, surface, mode, eventId, length }); });
   const pauseEl = doc.getElementById('pause');
   const pauseButton = doc.getElementById('pause-btn');
   const resumeButton = doc.getElementById('resume');
@@ -150,6 +179,38 @@ export function createHud(doc = document) {
 
   return {
     onPlay(handler) { playHandler = handler; },
+    onMode(handler) { modeHandler = handler; },
+    onAbandon(handler) { abandonHandler = handler; },
+    // restore remembered choices
+    setChoices({ mode: m, eventId: e, length: n } = {}) {
+      if (n === 3 || n === 6) pickLength(n);
+      if (e && eventButtons.some((b) => b.dataset.event === e)) pickEvent(e);
+      if (m === 'exhibition' || m === 'tournament') pickMode(m);
+    },
+    choices() { return { mode, eventId, length, level, surface }; },
+    // a running tournament locks the event and length; the play button names the next match
+    setTournamentState({ active, label }) {
+      for (const b of [...eventButtons, ...lengthButtons, ...levelButtons]) b.disabled = !!active && mode === 'tournament';
+      abandonButton.classList.toggle('hidden', !(active && mode === 'tournament'));
+      if (label) playButton.textContent = label;
+    },
+    // rounds: [{ title, current, matches: [{ a, b, winner: 'a' | 'b' | null, score }] }]
+    showBracket(rounds, eventName = '') {
+      menu.classList.toggle('has-bracket', !!rounds);
+      if (!rounds) { bracketEl.classList.add('hidden'); bracketEl.innerHTML = ''; return; }
+      const name = (e) => esc(e.cpu ? `${e.name} [${e.seed}]` : e.name);
+      bracketEl.innerHTML = `<div class="br-title">${esc(eventName)}</div><div class="br-rounds">${rounds.map((r) => `
+        <div class="br-round${r.current ? ' current' : ''}"><div class="br-rt">${esc(r.title)}</div>${
+  r.matches.length ? r.matches.map((m) => `<div class="br-match">
+          <div class="${m.winner === 'a' ? 'win' : m.winner ? 'lose' : ''}${m.a.cpu ? '' : ' you'}">${name(m.a)}</div>
+          <div class="${m.winner === 'b' ? 'win' : m.winner ? 'lose' : ''}${m.b.cpu ? '' : ' you'}">${name(m.b)}</div>
+          ${m.score ? `<span>${esc(m.score)}</span>` : ''}</div>`).join('') : '<div class="br-tbd">TBD</div>'}</div>`).join('')}</div>`;
+      bracketEl.classList.remove('hidden');
+    },
+    setTitle(tour, round) {
+      doc.getElementById('sb-tour').textContent = `${tour} | ${round}`;
+      doc.getElementById('menu-tour').textContent = tour;
+    },
     // customisation: handler(profile) on every change; open(bool) when the panel opens or closes
     onCustomChange(handler) { customHandler = handler; },
     onCustomOpen(handler) { customOpenHandler = handler; },

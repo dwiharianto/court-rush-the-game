@@ -5,6 +5,7 @@ import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox, lineMargin, serviceMargin, tiredness } from './rules.js';
 import { createAI } from './ai.js';
 import { createStats, resetStats, loadStats, statRows } from './stats.js';
+import { createTournament, nextOpponent, recordResult, levelFor, roundName, bracket, EVENTS } from './tournament.js';
 
 const NO_INPUT = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false };
 const TOSS_VY = Math.sqrt(2 * BALL.gravity * (SERVE.tossApex - SERVE.tossY0));
@@ -904,11 +905,73 @@ async function boot() {
   try { savedSurface = localStorage.getItem('courtRush.surface'); } catch { /* storage blocked */ }
   hud.setSurface(SURFACES[savedSurface] ? savedSurface : DEFAULT_SURFACE);
 
-  hud.onPlay((difficulty, surface) => {
+  // ---- tournaments: the draw is kept on this device, so it can be resumed
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } },
+    set(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage blocked */ } },
+  };
+  let tour = store.get('courtRush.tournament');
+  if (tour && !Array.isArray(tour.rounds)) tour = null;
+  let matchMode = 'exhibition';
+  const saveTour = () => store.set('courtRush.tournament', tour);
+  const hashName = (t) => { let h = 2166136261; for (const c of t) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
+  const seeded = (seed) => { let x = seed || 1; return () => { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; return x / 4294967296; }; };
+  const live = () => tour && tour.status === 'playing';
+  // the menu for the chosen mode: the draw, the next match on the button, the court behind
+  function refreshMenu() {
+    const c = hud.choices();
+    store.set('courtRush.choices', { mode: c.mode, eventId: c.eventId, length: c.length });
+    if (c.mode !== 'tournament') {
+      hud.showBracket(null);
+      hud.setTournamentState({ active: false, label: 'Play' });
+      applySurface(c.surface);
+      hud.setTitle(NAMES.tour, 'EXHIBITION');
+      world.setTourName(NAMES.tour);
+      return;
+    }
+    const shown = tour && (live() || tour.eventId === c.eventId) ? tour : null;
+    const event = EVENTS.find((e) => e.id === (shown ? shown.eventId : c.eventId));
+    applySurface(event.surface);
+    world.setTourName(event.name);
+    if (shown) {
+      hud.showBracket(bracket(shown), shown.name);
+      const opp = nextOpponent(shown);
+      hud.setTournamentState({ active: live(), label: live() ? `Play ${roundName(shown).toLowerCase()} v ${opp.name}` : 'New tournament' });
+      hud.setTitle(shown.name, live() ? roundName(shown) : shown.status === 'won' ? 'CHAMPION' : 'DRAW');
+    } else {
+      hud.showBracket(null);
+      hud.setTournamentState({ active: false, label: 'Start tournament' });
+      hud.setTitle(event.name, 'QUARTER-FINAL');
+    }
+  }
+  hud.onMode(refreshMenu);
+  hud.onAbandon(() => { tour = null; saveTour(); refreshMenu(); });
+  hud.setChoices(store.get('courtRush.choices') || {});
+  refreshMenu();
+
+  hud.onPlay((c) => {
     audio.unlock();
+    let difficulty = c.level, surface = c.surface, gamesToWin = c.length;
+    matchMode = c.mode;
+    if (c.mode === 'tournament') {
+      if (!live()) {
+        tour = createTournament({ eventId: c.eventId, difficulty: c.level, gamesToWin: c.length, playerName: me.name, seed: Date.now() });
+        saveTour();
+      }
+      const opp = nextOpponent(tour);
+      difficulty = levelFor(tour);
+      surface = tour.surface;
+      gamesToWin = tour.gamesToWin;
+      cpu = { ...cpuOpponent(me, seeded(hashName(opp.name))), name: opp.name }; // each entrant keeps their look
+      hud.setTitle(tour.name, roundName(tour));
+      world.setTourName(tour.name);
+    } else {
+      cpu = cpuOpponent(me); // a new opponent each match
+      hud.setTitle(NAMES.tour, 'EXHIBITION');
+      world.setTourName(NAMES.tour);
+    }
     applySurface(surface);
-    game = createGame({ difficulty, surface });
-    cpu = cpuOpponent(me); // a new opponent each match
+    game = createGame({ difficulty, surface, gamesToWin });
     rebuildView(1, look(cpu, 0xb3261e));
     hud.setNames(me.name, cpu.name);
     game.start();
@@ -954,6 +1017,7 @@ async function boot() {
     world.setSpeed(0);
     showScore();
     hud.showMenu();
+    refreshMenu();
     window.courtRush.game = game;
   });
   // sound on or off: M, or the button on the pause screen; remembered on this device
@@ -1105,12 +1169,27 @@ async function boot() {
           clockRunning = false;
           const won = e.winner === 0;
           hud.hideMessage();
-          hud.showMenu({
-            headline: won ? 'YOU WIN' : 'YOU LOSE',
-            detail: `${me.name} ${e.games[0]} : ${e.games[1]} ${cpu.name}`,
-            button: 'Play again',
-            stats: statsData(),
-          });
+          const score = `${me.name} ${e.games[0]} : ${e.games[1]} ${cpu.name}`;
+          if (matchMode === 'tournament' && live()) {
+            const round = roundName(tour);
+            recordResult(tour, won, e.games);
+            saveTour();
+            const champion = tour.status === 'won';
+            hud.showMenu({
+              headline: champion ? 'CHAMPION!' : won ? 'YOU WIN' : 'YOU LOSE',
+              detail: champion ? `${tour.name} winner | ${score}` : won ? `${score} | into the ${roundName(tour).toLowerCase()}` : `${score} | out in the ${round.toLowerCase()}`,
+              button: 'Play again',
+              stats: statsData(),
+            });
+            refreshMenu();
+          } else {
+            hud.showMenu({
+              headline: won ? 'YOU WIN' : 'YOU LOSE',
+              detail: score,
+              button: 'Play again',
+              stats: statsData(),
+            });
+          }
           if (won) audio.react('ovation');
           else audio.react('applause', 1);
           break;
