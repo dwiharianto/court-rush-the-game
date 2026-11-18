@@ -1031,9 +1031,21 @@ async function boot() {
   }
   setMuted(muted);
   hud.onSound(() => setMuted(!muted));
+  // commentary on or off: V, or the pause screen; remembered on this device
+  let commentaryOn = true;
+  try { commentaryOn = localStorage.getItem('courtRush.commentary') !== '0'; } catch { /* storage blocked */ }
+  function setCommentary(on) {
+    commentaryOn = on;
+    audio.setCommentary(on);
+    hud.setCommentary(on);
+    try { localStorage.setItem('courtRush.commentary', on ? '1' : '0'); } catch { /* storage blocked */ }
+  }
+  setCommentary(commentaryOn);
+  hud.onCommentary(() => setCommentary(!commentaryOn));
   window.addEventListener('keydown', (e) => {
     if (e.target && e.target.tagName === 'INPUT') return; // typing a name
     if (e.code === 'KeyM') { setMuted(!muted); return; }
+    if (e.code === 'KeyV') { setCommentary(!commentaryOn); hud.showCall(commentaryOn ? 'COMMENTARY ON' : 'COMMENTARY OFF'); return; }
     if (e.code !== 'KeyP' && e.code !== 'Escape') return;
     e.preventDefault();
     if (paused) resume(); else pause();
@@ -1070,12 +1082,61 @@ async function boot() {
     audio.play('effort', { side: e.side, power: e.kmh / 140, x: p.x, z: p.z });
   }
 
+  // ---- commentary: picks its moments, with chances, so it does not talk on every point
+  const say = (cat, chance = 1, delay = 1.0) => (Math.random() < chance ? audio.commentate(cat, { delay }) : false);
+  const lastHit = [null, null];
+  let lastBounce = null, saidTired = [-1, -1];
+  const gamesPlayed = () => game.match.games[0] + game.match.games[1];
+  // before each point: match point, break point, deuce, a tired player
+  function previewPoint() {
+    const m = game.match, s = m.server, r = 1 - s, P = m.points, G = m.games, toWin = m.gamesToWin;
+    const winsGame = (a) => P[a] >= 3 && P[a] > P[1 - a];
+    const winsMatch = (a) => winsGame(a) && G[a] + 1 >= toWin && G[a] + 1 - G[1 - a] >= 2;
+    if (winsMatch(0) || winsMatch(1)) {
+      const final = matchMode === 'tournament' && tour && roundName(tour) === 'FINAL';
+      if (say(final ? 'championshipPoint' : 'matchPoint', 0.9, 0.4)) return;
+    } else if (winsGame(r)) { if (say('breakPoint', 0.6, 0.4)) return; }
+    else if (P[0] >= 3 && P[0] === P[1]) { if (say('deuce', 0.35, 0.4)) return; }
+    for (const side of [0, 1]) {
+      if (game.players[side].stamina < 0.3 && saidTired[side] !== gamesPlayed()) {
+        saidTired[side] = gamesPlayed();
+        if (say('tired', 0.5, 0.4)) return;
+      }
+    }
+  }
+  function commentPoint(e) {
+    if (e.set) return; // the match is over: matchOver has the last word
+    if (e.game && e.winner !== e.server && say('break', 0.85)) return;
+    const long = e.rallyHits >= 12;
+    const hit = e.hitter >= 0 ? lastHit[e.hitter] : null;
+    switch (e.reason) {
+      case 'ace': say('ace', 0.8, 0.6); break;
+      case 'doubleFault': say('doubleFault', 0.8); break;
+      case 'double':
+        if (long) say('longRally', 0.9);
+        else if (hit && hit.kind === 'smash') say('smashWinner', 0.7);
+        else if (hit && hit.volley) say('volleyWinner', 0.6);
+        else say('winner', 0.55);
+        break;
+      case 'out': case 'net': {
+        if (long) { say('longRally', 0.85); break; }
+        let cat = 'netError';
+        if (e.reason === 'out' && lastBounce) cat = lineMargin(lastBounce.x, lastBounce.z, 1 - e.hitter).line === 'base' ? 'longError' : 'wideError';
+        if (!say(cat, 0.4)) say('unforced', 0.15);
+        break;
+      }
+      default:
+    }
+  }
+
   const REASON = { out: 'OUT', net: 'NET', double: 'WINNER', ace: 'ACE', doubleFault: 'DOUBLE FAULT', challenge: 'CALL STANDS' };
 
   function handleEvents() {
     for (const e of game.events) {
       switch (e.type) {
         case 'hit':
+          lastHit[e.side] = e;
+          if (e.kind === 'serve' && e.kmh >= 185) say('bigServe', 0.3, 0.5);
           world.setSpeed(e.kmh);
           audio.play('strike', {
             kind: e.volley ? 'volley' : e.kind === 'drive' || e.kind === 'lob' ? 'hit' : e.kind,
@@ -1100,11 +1161,13 @@ async function boot() {
           break;
         case 'dive':
           audio.play('effort', { side: e.side, power: 1.1, x: e.x, z: e.z });
+          say('dive', 0.7, 0.25);
           break;
         case 'diveLand':
           audio.play('slide', { speed: e.speed + 2, x: e.x, z: e.z });
           break;
         case 'bounce':
+          if (e.n === 1) lastBounce = e;
           world.addBounceMark(e.x, e.z);
           audio.play('bounce', { speed: e.v, x: e.x, z: e.z });
           break;
@@ -1112,6 +1175,7 @@ async function boot() {
           audio.play(e.cord ? 'cord' : 'net', { x: e.x, z: 0 });
           break;
         case 'challenge':
+          say('challenge', 0.7, 0.4);
           hud.showMessage('CHALLENGE', shortName(e.side), 1.4);
           hud.showReview({ margin: e.margin, line: e.line, surfaceColor: SURFACES[game.surface].court });
           audio.react('applause', 0.15);
@@ -1124,6 +1188,7 @@ async function boot() {
           hud.setChallenges(game.challenges);
           hud.showMessage(e.overturned ? 'CALL OVERTURNED' : 'CALL STANDS', e.inside ? 'BALL IN' : 'BALL OUT', 1.8);
           if (e.overturned) { audio.call('Correction!'); audio.react('applause', 0.45); }
+          say(e.overturned ? 'overturned' : 'stands', 0.7, 1.2);
           break;
         case 'replay':
           showScore();
@@ -1132,13 +1197,19 @@ async function boot() {
         case 'netCord':
           audio.play('cord', { x: e.x, z: 0 });
           hud.showCall('NET CORD');
+          say('netCord', 0.6, 0.35);
           break;
         case 'let':
           audio.call('Let!');
           hud.showMessage('LET', e.serveNumber === 1 ? 'FIRST SERVE' : 'SECOND SERVE', 1.2);
           break;
+        case 'matchStart':
+          saidTired = [-1, -1];
+          say('matchStart', 1, 1.2);
+          break;
         case 'serveReady':
           showScore();
+          if (e.serveNumber === 1) previewPoint();
           break;
         case 'fault':
           hud.showMessage('FAULT', 'SECOND SERVE', 1.2);
@@ -1163,10 +1234,12 @@ async function boot() {
           if (e.reason === 'out') audio.call('Out!');
           else if (e.reason === 'doubleFault' && e.serveReason === 'out') audio.call('Fault!');
           if (!e.set) crowdReact(e);
+          commentPoint(e);
           break;
         }
         case 'matchOver': {
           clockRunning = false;
+          audio.commentate('matchWon', { delay: 0.8, force: true });
           const won = e.winner === 0;
           hud.hideMessage();
           const score = `${me.name} ${e.games[0]} : ${e.games[1]} ${cpu.name}`;

@@ -97,6 +97,9 @@ export function createHud(doc = document) {
   const soundButton = doc.getElementById('sound');
   let soundHandler = null;
   soundButton.addEventListener('click', () => { if (soundHandler) soundHandler(); });
+  const commentaryButton = doc.getElementById('commentary');
+  let commentaryHandler = null;
+  commentaryButton.addEventListener('click', () => { if (commentaryHandler) commentaryHandler(); });
   // ---- player customisation panel
   const custom = doc.getElementById('custom');
   const nameInput = doc.getElementById('custom-name');
@@ -226,6 +229,8 @@ export function createHud(doc = document) {
     onResume(handler) { resumeHandler = handler; },
     onQuit(handler) { quitHandler = handler; },
     onSound(handler) { soundHandler = handler; },
+    onCommentary(handler) { commentaryHandler = handler; },
+    setCommentary(on) { commentaryButton.textContent = on ? 'Commentary: on' : 'Commentary: off'; commentaryButton.setAttribute('aria-pressed', String(on)); },
     setSound(on) { soundButton.textContent = on ? 'Sound: on' : 'Sound: off'; soundButton.setAttribute('aria-pressed', String(on)); },
     // data: { names: [a, b], rows: [[label, a, b]], longestRally, time }
     showPause(scoreLine, data = null) {

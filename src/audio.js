@@ -66,6 +66,7 @@ export function createAudio(options = {}) {
       for (let i = 0; i < 6; i++) bank.ball[kind].push(buffer(ballSound(sr, kind, br), sr));
     }
     loadCalls();
+    loadCommentary();
     // each player has their own voice: six effort grunts apiece
     const gr = makeRng(33);
     AUDIO.gruntPitch.forEach((f0, side) => {
@@ -205,6 +206,51 @@ export function createAudio(options = {}) {
     pickVoice();
     speech.addEventListener?.('voiceschanged', pickVoice);
   }
+  // ---- commentary (tools/build-commentary.py): two voices, broadcast-style (dry, a
+  // little band-limited, straight to the mix), one line at a time
+  const comm = { lines: null, busyUntil: 0, last: '', voice: 0, enabled: true };
+  function loadCommentary() {
+    import('./assets/commentary.js').then(async ({ default: data }) => {
+      const lines = {};
+      for (const [cat, list] of Object.entries(data.clips)) {
+        lines[cat] = await Promise.all(list.map(async (l) => ({
+          text: l.text,
+          voices: await Promise.all(l.voices.map((b64) => {
+            const bin = atob(b64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return ctx.decodeAudioData(bytes.buffer);
+          })),
+        })));
+      }
+      comm.lines = lines;
+      comm.bus = ctx.createGain();
+      comm.bus.gain.value = AUDIO.levels.commentary;
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 140;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6500;
+      comm.bus.connect(hp).connect(lp).connect(master);
+    }).catch(() => { /* no commentary */ });
+  }
+  // A line for the moment `cat`, unless one is still playing (or it is switched off).
+  // Returns true when it speaks.
+  function commentate(cat, { delay = 0.5, force = false } = {}) {
+    if (!ctx || muted || paused || !comm.enabled || !comm.lines) return false;
+    const list = comm.lines[cat];
+    if (!list || !list.length) return false;
+    const at = now() + delay;
+    if (!force && at < comm.busyUntil + 0.6) return false;
+    let pick = list[Math.floor(rnd() * list.length)];
+    if (list.length > 1 && pick.text === comm.last) pick = list[(list.indexOf(pick) + 1) % list.length];
+    comm.last = pick.text;
+    comm.voice = 1 - comm.voice; // the two commentators take turns
+    const s = ctx.createBufferSource();
+    s.buffer = pick.voices[comm.voice] || pick.voices[0];
+    s.connect(comm.bus);
+    s.start(at);
+    comm.busyUntil = at + s.buffer.duration;
+    return true;
+  }
+
   // Calls are recorded clips (tools/build-calls.py), loaded once audio starts; the
   // browser's speech voice is only a fallback for anything without a clip.
   const CALL_CLIPS = { 'Out!': 'out', 'Fault!': 'fault', 'Let!': 'let', 'Correction!': 'correction' };
@@ -229,6 +275,7 @@ export function createAudio(options = {}) {
   function call(text) {
     if (muted || paused) return;
     const list = ctx && bank.calls[CALL_CLIPS[text]];
+    if (ctx) comm.busyUntil = Math.max(comm.busyUntil, now() + 0.5); // the umpire comes first
     if (list && list.length) {
       const s = ctx.createBufferSource();
       s.buffer = list[Math.floor(rnd() * list.length)];
@@ -425,6 +472,10 @@ export function createAudio(options = {}) {
     },
     // a spoken line call: 'Out!', 'Fault!', 'Let!'
     call,
+    commentate,
+    // commentary on or off
+    setCommentary(on) { comm.enabled = !!on; },
+    get commentary() { return comm.enabled; },
     setSurface(name) { surface = name; },
     react(kind, intensity = 0.5) {
       if (!ctx || !REACT[kind]) return;

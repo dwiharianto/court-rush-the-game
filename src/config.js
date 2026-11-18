@@ -159,6 +159,7 @@ export const AUDIO = {
     applause: 0.82, whistle: 0.2,
     grunt: 0.5, call: 1.6, // line-call volume relative to the master volume (speech fallback)
     callClip: 1.1, // the recorded calls
+    commentary: 0.85,
     squeak: 0.32,
   },
 };
