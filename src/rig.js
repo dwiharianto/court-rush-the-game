@@ -356,7 +356,7 @@ export function createBodyRig(body, options = {}) {
     } else {
       rootBone.position.y = prep.rootY - (legs.hipJoint - p.hipY) + p.lift;
     }
-    setJoint('root', euler(0, p.hipsYaw, 0));
+    setJoint('root', euler(0, p.hipsYaw, p.hipsRoll));
     // spine: the twist, lean and side lean spread over four vertebrae
     for (const n of ['spine04', 'spine03', 'spine02', 'spine01']) setJoint(n, euler(p.torsoX * 0.25, p.torsoY * 0.25, p.torsoZ * 0.25));
     setJoint('neck01', euler(p.headX * 0.4, p.headY * 0.4, 0));

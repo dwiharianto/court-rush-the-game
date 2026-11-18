@@ -1,6 +1,6 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
-import { AI, AUDIO, BALL, CONTACT, COURT, DEFAULT_SURFACE, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
+import { AI, AUDIO, BALL, CONTACT, COURT, DEFAULT_SURFACE, DIVE, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
 import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox } from './rules.js';
 import { createAI } from './ai.js';
@@ -100,12 +100,38 @@ export function createGame(options = {}) {
         events.push({ type: 'plant', side: p.side, x: p.x, z: p.z, speed });
       }
     }
+    moveWithin(p, dt);
+  }
+
+  function moveWithin(p, dt) {
     p.x += p.vx * dt;
     p.z += p.vz * dt;
     const d = p.z * p.sign;
     if (Math.abs(p.x) > PLAYER.maxX) { p.x = Math.sign(p.x) * PLAYER.maxX; p.vx = 0; }
     if (d < PLAYER.minZ) { p.z = p.sign * PLAYER.minZ; p.vz = 0; }
     if (d > PLAYER.maxZ) { p.z = p.sign * PLAYER.maxZ; p.vz = 0; }
+  }
+
+  // A dive carries the player sideways through the air, then slides them along the
+  // ground to a stop; there is no steering until they are back on their feet.
+  const diving = (p) => !!(p.swing && p.swing.dive);
+  function diveMove(p, dt) {
+    const air = p.actionT < DIVE.flight;
+    const sp = Math.hypot(p.vx, p.vz);
+    if (!air && !p.swing.landed) {
+      p.swing.landed = true;
+      p.swing.x0 = p.x; p.swing.z0 = p.z;
+      events.push({ type: 'diveLand', side: p.side, x: p.x, z: p.z, speed: sp });
+    }
+    const ns = Math.max(0, sp - (air ? DIVE.airDrag : DIVE.slideDecel[surfaceName] ?? 8) * dt);
+    const f = sp > 0 ? ns / sp : 0;
+    p.vx *= f; p.vz *= f;
+    if (p.swing.landed && ns === 0 && !p.swing.stopped) {
+      p.swing.stopped = true;
+      events.push({ type: 'slideEnd', side: p.side, x0: p.swing.x0, z0: p.swing.z0, x1: p.x, z1: p.z });
+    }
+    moveWithin(p, dt);
+    p.chaseT = 0;
   }
 
   function startSlide(p) {
@@ -282,14 +308,27 @@ export function createGame(options = {}) {
     // near the net, a ball that will still be in the air at the hitting plane is volleyed
     const volley = !smash && kind !== 'smash' && ball.inPlay && !ball.isServe && ball.lastHitter !== p.side
       && ball.bounces === 0 && Math.abs(p.z) <= VOLLEY.zoneZ && (!pr || pr.bounces === 0);
+    // a ball about to pass just beyond reach: dive for it (the CPU decides in its plan)
+    const away = pr ? Math.abs(bx - p.x) : 0;
+    const dive = !smash && pr !== null && pr.t <= DIVE.lead && pr.y <= DIVE.maxHeight && away <= DIVE.maxStart
+      && (plan ? !!plan.dive : away > DIVE.from);
     if (smash) p.action = 'smash';
+    else if (dive) p.action = hand > 0 ? 'diveF' : 'diveB';
     else if (volley) p.action = hand > 0 ? 'fhVolley' : 'bhVolley';
     else p.action = hand > 0 ? 'forehand' : 'backhand';
     p.actionT = 0;
     // where the ball should be at contact, for the animation to shape the stroke
     const contactH = pr ? pr.y : 1.0, contactSide = pr ? Math.abs(bx - p.x) : 0.75;
-    p.swing = { kind: smash ? 'smash' : kind, hand, plan, volley, done: false, contactH, contactSide };
+    p.swing = { kind: smash ? 'smash' : kind, hand, plan, volley, done: false, contactH, contactSide, dive };
     considerSplit(players[1 - p.side]);
+    if (dive) {
+      endSlide(p, true);
+      const dir = Math.sign(bx - p.x) || 1;
+      p.vx = dir * Math.max(DIVE.lunge, p.vx * dir);
+      p.vz *= 0.4;
+      events.push({ type: 'dive', side: p.side, x: p.x, z: p.z, dir });
+      return;
+    }
     // swinging at the end of a long chase slides into the shot
     if (!p.slide && !smash && p.chaseT >= court.slideChase) startSlide(p);
   }
@@ -331,9 +370,10 @@ export function createGame(options = {}) {
     if (ball.z * p.sign <= 0) return; // still on the other side of the net
     const past = (ball.z - (p.z - p.sign * CONTACT.front)) * p.sign;
     if (past < 0 || past > CONTACT.depth) return;
-    if (Math.abs(ball.x - p.x) > CONTACT.reachX) return;
-    if (ball.y > (s.kind === 'smash' ? SMASH.reachY : CONTACT.reachY)) return;
+    if (Math.abs(ball.x - p.x) > (s.dive ? DIVE.reachX : CONTACT.reachX)) return;
+    if (ball.y > (s.kind === 'smash' ? SMASH.reachY : s.dive ? DIVE.maxHeight + 0.3 : CONTACT.reachY)) return;
     s.done = true;
+    if (s.dive) { diveShot(p, s); return; }
     // a smash needs the ball overhead; if it dropped too low it is just a drive
     const smash = s.kind === 'smash' && ball.y >= SMASH.contactMin;
     const kind = s.kind === 'smash' && !smash ? 'drive' : s.kind;
@@ -368,6 +408,24 @@ export function createGame(options = {}) {
     // a mistimed shot can fly low and clip the tape
     const risky = !perfect && !smash && rng() < SHOT.netRiskChance * Math.min(1, Math.abs(e) / 0.1);
     launch(p, tx, -p.sign * depth, kind, speed, volley, risky);
+  }
+
+  // A diving shot: weak, short and scattered, but the ball comes back.
+  function diveShot(p, s) {
+    const volley = ball.bounces === 0;
+    const kind = s.kind === 'smash' ? 'drive' : s.kind;
+    let tx, depth;
+    if (s.plan) { tx = s.plan.tx; depth = Math.abs(s.plan.tz); }
+    else {
+      tx = input.x * SHOT.aimX;
+      depth = kind === 'lob' ? SHOT.lobDepth : SHOT.depthDefault;
+      const e = p.actionT - SWING.ideal;
+      events.push({ type: 'timing', kind: Math.abs(e) <= SWING.perfect ? 'perfect' : e > 0 ? 'early' : 'late', error: e, dive: true });
+    }
+    tx += gauss() * DIVE.scatter;
+    depth = Math.abs(depth) * DIVE.depth;
+    const speed = (s.plan ? s.plan.speed : SHOT.driveSpeed) * DIVE.speedFactor;
+    launch(p, tx, -p.sign * depth, kind, speed, volley, rng() < DIVE.netRisk);
   }
 
   // ------------------------------------------------------------ rules
@@ -454,6 +512,7 @@ export function createGame(options = {}) {
       return;
     }
     if (human.action === 'serve') { serveFollow(human, dt); return; }
+    if (diving(human)) { diveMove(human, dt); return; }
     if (g.state === 'rally' && human.action === 'ready' && press) startSwing(human, press);
     if (g.state === 'menu' || g.state === 'matchOver') { drive(human, 0, 0, 0, dt); return; }
     drive(human, input.x, -input.y, topSpeed(human), dt);
@@ -474,6 +533,7 @@ export function createGame(options = {}) {
       return;
     }
     if (cpu.action === 'serve') { serveFollow(cpu, dt); return; }
+    if (diving(cpu)) { diveMove(cpu, dt); return; }
     const d = ai.think(g, cpuBounceGood);
     if (d.swing && cpu.action === 'ready') startSwing(cpu, d.swing.kind, d.swing);
     const dx = d.x - cpu.x, dz = d.z - cpu.z;
@@ -499,7 +559,7 @@ export function createGame(options = {}) {
       if (p.action === 'serve') {
         if (!p.swing.done && p.actionT >= SERVE_ANIM.contact) launchServe(p);
         if (p.actionT >= SERVE_ANIM.swingDuration) setAction(p, 'ready');
-      } else if (p.actionT >= SWING.duration) setAction(p, 'ready');
+      } else if (p.actionT >= (diving(p) ? DIVE.duration : SWING.duration)) setAction(p, 'ready');
     }
 
     const held = g.state === 'serveReady';
@@ -749,6 +809,12 @@ async function boot() {
         case 'slideEnd':
           world.addSlideTrail(e.x0, e.z0, e.x1, e.z1);
           break;
+        case 'dive':
+          audio.play('effort', { side: e.side, power: 1.1, x: e.x, z: e.z });
+          break;
+        case 'diveLand':
+          audio.play('slide', { speed: e.speed + 2, x: e.x, z: e.z });
+          break;
         case 'bounce':
           world.addBounceMark(e.x, e.z);
           audio.play('bounce', { speed: e.v, x: e.x, z: e.z });
@@ -874,7 +940,7 @@ async function boot() {
     // clay dust kicked up ahead of a sliding foot
     dustClock += dt;
     for (const p of game.players) {
-      if (!p.slide) continue;
+      if (!p.slide && !(p.swing && p.swing.dive && p.swing.landed)) continue;
       const sp = Math.hypot(p.vx, p.vz);
       if (sp < 0.5) continue;
       const ux = p.vx / sp, uz = p.vz / sp;

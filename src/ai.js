@@ -3,7 +3,7 @@
 // going out, and picks a target mostly away from the player with some error.
 // Its weaknesses are all difficulty settings: reaction time, movement and
 // recovery speed, reach, and errors that grow when it is stretched.
-import { AI, BALL, CONTACT, COURT, SMASH, SWING, VOLLEY } from './config.js';
+import { AI, BALL, CONTACT, COURT, DIVE, SMASH, SWING, VOLLEY } from './config.js';
 import { createBall, copyBall, stepBall, predictAtPlane } from './ball.js';
 
 const sim = createBall();
@@ -156,9 +156,14 @@ export function createAI(level, rng = Math.random) {
     if (cpu.action === 'ready') {
       const pr = predictAtPlane(ball, cpu.z + CONTACT.front, -1, SWING.ideal + 0.02, plane);
       const high = pr && pr.y >= SMASH.minHeight;
-      if (pr && pr.t <= SWING.ideal && Math.abs(pr.x - cpu.x) <= level.reach && pr.y <= (high ? SMASH.reachY : CONTACT.reachY)) {
+      const away = pr ? Math.abs(pr.x - cpu.x) : 0;
+      if (pr && pr.t <= SWING.ideal && away <= level.reach && pr.y <= (high ? SMASH.reachY : CONTACT.reachY)) {
         out.swing = chooseShot(g, stretchNow(cpu));
         if (high) out.swing.kind = 'smash';
+      } else if (pr && pr.t <= SWING.ideal && !high && away <= DIVE.maxStart && pr.y <= DIVE.maxHeight) {
+        // just out of reach: dive for it, as often as this level dares (decided once per ball)
+        if (plan.dive === undefined) plan.dive = rng() < level.diveChance;
+        if (plan.dive) { out.swing = chooseShot(g, 1); out.swing.dive = true; out.swing.kind = 'drive'; }
       }
     }
     return out;

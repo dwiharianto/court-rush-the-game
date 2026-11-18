@@ -245,6 +245,25 @@ export const CONTACT = {
   reachY: 2.7,
 };
 
+// Dive: a swing at a ball passing just beyond normal reach becomes a sideways dive.
+// It reaches further, but the shot is weak and the player is down for a while.
+export const DIVE = {
+  from: 1.45, // predicted sideways distance to the ball at contact beyond which a swing dives
+  maxStart: 2.35, // and up to which a dive can still get there
+  maxHeight: 1.7, // balls higher than this are not dived for
+  lead: 0.34, // only for a ball this close (seconds to contact); earlier, there is still time to run
+  reachX: 2.0, // sideways reach while diving (from the player's moving position)
+  lunge: 4.2, // m/s sideways launch
+  flight: 0.36, // seconds in the air before landing
+  airDrag: 1.5, // m/s^2 in the air
+  slideDecel: { clay: 6, grass: 8, hard: 13 }, // m/s^2 sliding on the ground after landing
+  duration: 1.55, // until back on the feet and ready
+  speedFactor: 0.6, // of a normal drive's speed
+  depth: 0.62, // fraction of the usual depth (a short, defensive ball)
+  scatter: 1.2, // metres of extra sideways error
+  netRisk: 0.3, // chance it flies low enough to catch the tape
+};
+
 // Spin of each shot, as a lift coefficient (see BALL.magnus): positive is topspin.
 export const SPIN = {
   drive: 0.17, lob: 0.12, slice: -0.11, volley: -0.04, smash: 0.03,
@@ -297,10 +316,11 @@ export const AI = {
   //   awayChance   how often it aims away from the player
   //   shotSpeed    drive speed, m/s; serveSpeed and serveError (timing spread, seconds)
   //   netRush      chance of following a short-ball attack to the net
+  // diveChance: how often the CPU dives for a ball just out of reach
   levels: {
-    easy: { speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.33, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 23, serveSpeed: 33, serveError: 0.1, netRush: 0.15 },
-    normal: { speed: 5.6, errorSize: 0.8, errorRate: 0.04, reaction: 0.21, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.07, awayChance: 0.75, shotSpeed: 27, serveSpeed: 39, serveError: 0.075, netRush: 0.25 },
-    hard: { speed: 6.2, errorSize: 0.5, errorRate: 0.022, reaction: 0.11, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.045, awayChance: 0.88, shotSpeed: 31, serveSpeed: 45, serveError: 0.05, netRush: 0.35 },
+    easy: { diveChance: 0.12, speed: 5.0, errorSize: 1.2, errorRate: 0.09, reaction: 0.33, recover: 0.5, reach: 1.35, pressure: 1.0, pressureMiss: 0.14, awayChance: 0.55, shotSpeed: 23, serveSpeed: 33, serveError: 0.1, netRush: 0.15 },
+    normal: { diveChance: 0.2, speed: 5.6, errorSize: 0.8, errorRate: 0.04, reaction: 0.21, recover: 0.6, reach: 1.4, pressure: 0.8, pressureMiss: 0.07, awayChance: 0.75, shotSpeed: 27, serveSpeed: 39, serveError: 0.075, netRush: 0.25 },
+    hard: { diveChance: 0.3, speed: 6.2, errorSize: 0.5, errorRate: 0.022, reaction: 0.11, recover: 0.75, reach: 1.5, pressure: 0.6, pressureMiss: 0.045, awayChance: 0.88, shotSpeed: 31, serveSpeed: 45, serveError: 0.05, netRush: 0.35 },
   },
   stretchRun: 6, // metres of running that count as fully stretched
   stretchPaceMin: 19, // incoming ball speed where pace starts to add pressure, m/s

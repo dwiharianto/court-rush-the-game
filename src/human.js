@@ -10,6 +10,7 @@
 //   lKnee, rKnee     knee flexion, positive folds the shin back
 //   lAnkle, rAnkle   ankle, positive points the toes down (heel lifts); 0 keeps the sole level
 //   hipsYaw          pelvis turn about the vertical axis
+//   hipsRoll         whole-body roll about the forward axis, positive toward its right (dives)
 //   torsoX/Y/Z       torso lean forward, twist (positive turns to its left), side lean
 //   headX, headY     nod and turn
 //   lShX, rShX       shoulder flexion, positive raises the arm forward
@@ -24,13 +25,13 @@
 //   lift             extra hip height (jumps, idle bounce)
 //   hipY             explicit hip height, used when plant is false (seated)
 import * as THREE from 'three';
-import { BODY, ANIM, SERVE_ANIM, SWING, SERVE as SERVE_CFG } from './config.js';
+import { BODY, ANIM, SERVE_ANIM, SWING, SERVE as SERVE_CFG, DIVE as DIVE_CFG } from './config.js';
 import { createBodyRig } from './rig.js';
 import MOCAP from './assets/mocap.js';
 import CAPTURE from './assets/strokes.js';
 
 const POSE_KEYS = [
-  'lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle', 'hipsYaw',
+  'lHip', 'rHip', 'lHipZ', 'rHipZ', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle', 'hipsYaw', 'hipsRoll',
   'torsoX', 'torsoY', 'torsoZ', 'headX', 'headY',
   'lShX', 'rShX', 'lShZ', 'rShZ', 'lShY', 'rShY', 'lElbow', 'rElbow',
   'rWristX', 'rWristY', 'rWristZ', 'lGrip', 'lift', 'hipY',
@@ -363,7 +364,7 @@ export function createFigure(options = {}) {
     } else {
       hips.position.y = p.hipY + p.lift;
     }
-    hips.rotation.y = p.hipsYaw;
+    hips.rotation.set(0, p.hipsYaw, p.hipsRoll);
     torso.rotation.set(p.torsoX * 0.5, p.torsoY * 0.5, p.torsoZ * 0.5);
     chest.rotation.set(p.torsoX * 0.5, p.torsoY * 0.5, p.torsoZ * 0.5);
     head.rotation.set(p.headX, p.headY, 0);
@@ -556,9 +557,45 @@ const SMASH = [
   key(S, {}),
 ];
 
+const MIRROR_PAIRS = [['lHip', 'rHip'], ['lHipZ', 'rHipZ'], ['lKnee', 'rKnee'], ['lAnkle', 'rAnkle']];
+const MIRROR_FLIP = ['hipsYaw', 'hipsRoll', 'torsoY', 'torsoZ', 'headY'];
+
+// Dive: a push off the far leg, a full-length lay-out toward the ball with the racket
+// at full stretch (contact), a landing on the side and a slide, then up via one knee.
+// Made for a forehand dive to the right; the backhand one is its mirror, with the
+// racket arm reaching across the body.
+const DV = DIVE_CFG.duration;
+const DIVE_FH = [
+  key(0, {}),
+  key(0.08, { lHip: 0.75, lKnee: 1.25, lHipZ: 0.15, rHip: 0.35, rKnee: 0.55, rHipZ: 0.55, torsoX: 0.45, torsoZ: 0.25, hipsRoll: 0.2,
+    rShX: 0.3, rShZ: 1.0, rElbow: 0.7, lShZ: 0.5, lElbow: 0.9, headY: -0.3 }),
+  key(C, { lHip: 0.05, lKnee: 0.15, lHipZ: 0.25, rHip: 0.55, rKnee: 0.65, rHipZ: 0.2, torsoX: 0.2, torsoZ: 0.3, hipsRoll: 0.95, lift: 0.05,
+    rShX: 0.25, rShZ: 2.2, rShY: 0.1, rElbow: 0.1, rWristX: 0.2, lShX: 0.5, lShZ: 1.1, lElbow: 0.6, headY: -0.5, headX: -0.2 }),
+  key(0.3, { lHip: 0.2, lKnee: 0.3, lHipZ: 0.3, rHip: 0.5, rKnee: 0.7, rHipZ: 0.15, torsoX: 0.15, torsoZ: 0.25, hipsRoll: 1.3, lift: -0.3,
+    rShX: 0.3, rShZ: 2.5, rShY: 0.2, rElbow: 0.15, rWristX: 0.3, lShX: 1.0, lShZ: 0.8, lElbow: 0.9, headY: -0.4, headX: -0.3 }),
+  key(DIVE_CFG.flight, { lHip: 0.3, lKnee: 0.45, lHipZ: 0.25, rHip: 0.45, rKnee: 0.8, rHipZ: 0.1, torsoX: 0.1, torsoZ: 0.2, hipsRoll: 1.42, lift: -0.52,
+    rShX: 0.35, rShZ: 2.6, rShY: 0.2, rElbow: 0.25, rWristX: 0.3, lShX: 1.3, lShZ: 0.6, lElbow: 1.2, headY: -0.3, headX: -0.4 }),
+  key(0.85, { lHip: 0.35, lKnee: 0.55, lHipZ: 0.2, rHip: 0.5, rKnee: 0.85, rHipZ: 0.1, torsoX: 0.1, torsoZ: 0.15, hipsRoll: 1.45, lift: -0.55,
+    rShX: 0.45, rShZ: 2.4, rShY: 0.2, rElbow: 0.5, rWristX: 0.3, lShX: 1.2, lShZ: 0.5, lElbow: 1.3, headY: -0.1, headX: -0.4 }),
+  // up onto one knee, pushing off the ground with the free hand
+  key(1.15, { lHip: 1.4, lKnee: 2.1, lHipZ: 0.2, rHip: 0.9, rKnee: 2.3, rHipZ: 0.25, torsoX: 0.7, torsoZ: 0.1, hipsRoll: 0.55, lift: -0.42,
+    rShX: 0.6, rShZ: 0.6, rElbow: 0.9, lShX: 0.6, lShZ: 0.9, lElbow: 0.3, headX: -0.3 }),
+  key(1.38, { ...READY, lHip: 1.0, rHip: 1.0, lKnee: 1.5, rKnee: 1.5, torsoX: 0.5, hipsRoll: 0.1 }),
+  key(DV, {}),
+];
+const DIVE_BH = DIVE_FH.map((k, i) => {
+  const pose = mirrorLegs(makePose(), k.pose);
+  // the racket arm reaches across the body to the left; the free arm out to that side
+  const reachW = [0, 0.4, 1, 1, 1, 0.9, 0.3, 0, 0][i] ?? 0;
+  pose.rShX += (1.35 - pose.rShX) * reachW; pose.rShY += (1.1 - pose.rShY) * reachW;
+  pose.rShZ += (0.35 - pose.rShZ) * reachW; pose.rElbow += (0.2 - pose.rElbow) * reachW;
+  pose.lShX += (0.3 - pose.lShX) * reachW; pose.lShZ += (1.3 - pose.lShZ) * reachW; pose.lElbow += (0.4 - pose.lElbow) * reachW;
+  return { t: k.t, pose };
+});
+
 const HAND_CLIPS = {
   forehand: FOREHAND, backhand: BACKHAND, fhVolley: FH_VOLLEY, bhVolley: BH_VOLLEY,
-  smash: SMASH, toss: TOSS, serve: SERVE,
+  smash: SMASH, toss: TOSS, serve: SERVE, diveF: DIVE_FH, diveB: DIVE_BH,
   serveReady: [{ t: 0, pose: SERVE_STANCE }],
 };
 // Captured strokes (tools/build-strokes.mjs): the body comes from motion capture of
@@ -627,8 +664,6 @@ const SLIDE_FWD = makePose({
   rShX: 0.45, rShZ: 0.5, rElbow: 1.2, rWristX: -0.5, rWristZ: -0.3,
   lShX: 0.6, lShZ: 0.75, lElbow: 0.6,
 });
-const MIRROR_PAIRS = [['lHip', 'rHip'], ['lHipZ', 'rHipZ'], ['lKnee', 'rKnee'], ['lAnkle', 'rAnkle']];
-const MIRROR_FLIP = ['hipsYaw', 'torsoY', 'torsoZ', 'headY'];
 
 // out = pose mirrored left to right, legs only plus the twist and lean keys
 function mirrorLegs(out, pose) {
@@ -714,6 +749,7 @@ const smooth = (cur, target, rate, dt) => cur + (target - cur) * Math.min(1, dt 
 // one a lean toward it, a longer arm and a wider stance. Clips are built for a ball
 // at waist height (about 1 m) and 0.75 m to the side.
 const STROKES = new Set(['forehand', 'backhand', 'fhVolley', 'bhVolley']);
+const DIVES = new Set(['diveF', 'diveB']);
 function shapeStroke(p, s) {
   const sw = s.swing;
   if (!sw || !STROKES.has(s.action) || sw.contactH === undefined) return;
@@ -1008,7 +1044,7 @@ export function createCharacter(options = {}) {
       actionBlend = 1;
       copyPose(out, clip);
       // legs keep running, or sliding, if the player swings on the move
-      const legW = (1 - 0.8 * runBlend) * (1 - slideBlend);
+      const legW = DIVES.has(s.action) ? 1 : (1 - 0.8 * runBlend) * (1 - slideBlend);
       for (const key of LEG_KEYS) out[key] = loco[key] + (clip[key] - loco[key]) * legW;
     } else {
       // ease back from the last clip pose into locomotion
