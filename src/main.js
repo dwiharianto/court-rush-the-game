@@ -861,6 +861,12 @@ async function boot() {
   });
   const views = [createCharacter(look(me)), createCharacter(look(cpu, 0xb3261e))];
   world.scene.add(views[0].object3d, views[1].object3d);
+  // the spectators: the same bodies, simplified, loaded in the background (blocks until then)
+  if (bodiesReady) {
+    Promise.all([import('./body.js'), import('./rig.js')])
+      .then(([b, r]) => b.loadCrowdBodies().then((bodies) => world.setCrowdBodies(bodies, r.createBodyRig)))
+      .catch((err) => console.warn('Spectator bodies did not load:', err));
+  }
   function rebuildView(side, kit) {
     world.scene.remove(views[side].object3d);
     views[side].object3d.traverse((o) => { if (o.geometry) o.geometry.dispose(); });

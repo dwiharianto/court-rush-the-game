@@ -1,4 +1,4 @@
-// The country club venue, and the spectators shared by both venues.
+// The country club venue.
 // A fenced club court with small bleachers, chain-link fencing with a windscreen,
 // trees all round, a clubhouse with a terrace, a neighbouring court with its own
 // rally going on, people strolling on the paths and flags in the breeze.
@@ -6,96 +6,9 @@ import * as THREE from 'three';
 import { ARENA, NAMES } from './config.js';
 import { createFigure, makePose, POSES } from './human.js';
 import { canvasTexture, makeRng, noiseTexture, boardTexture, box, grassFloorTexture } from './gfx.js';
+import { buildCrowd } from './crowd.js';
 
-// ---------------------------------------------------------------- spectators
-// Instanced bodies, heads and arms. cheer(i) gets them clapping, waving and, for a
-// big moment, up on their feet; with idle on, a few fidget between points.
-const SHIRTS = [0xd9d4c7, 0xb9c4d6, 0x7f8fa6, 0xc9695a, 0xe0b65a, 0x5f7f6b, 0xf0ede6, 0x8d6e97, 0x3f5d8a, 0xcf8f6a, 0x9aa5a8];
 const SKINS = [0xe2b28f, 0xc98f68, 0x9a6845, 0xf0c9a8, 0x6f4a32];
-
-// seats: [x, y, z, yaw?, standing?]; yaw defaults to facing the court
-export function buildCrowd(parent, seats, rnd, { idle = false, shirts = SHIRTS } = {}) {
-  const n = seats.length;
-  const bodyGeo = new THREE.BoxGeometry(0.42, 0.56, 0.3);
-  const headGeo = new THREE.SphereGeometry(0.115, 8, 6);
-  const armGeo = new THREE.BoxGeometry(0.085, 0.4, 0.085).translate(0, -0.2, 0); // pivot at the shoulder
-  const mat = () => new THREE.MeshStandardMaterial({ roughness: 0.9 });
-  const bodies = new THREE.InstancedMesh(bodyGeo, mat(), n);
-  const heads = new THREE.InstancedMesh(headGeo, mat(), n);
-  const arms = new THREE.InstancedMesh(armGeo, mat(), n * 2);
-  for (const m of [bodies, heads, arms]) m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  const col = new THREE.Color();
-  const P = seats.map(([x, y, z, yaw, standing], i) => {
-    const s = {
-      x, y, z, standing: !!standing,
-      yaw: yaw ?? Math.atan2(-x, -z * 0.35),
-      h: 0.9 + rnd() * 0.2,
-      phase: rnd() * Math.PI * 2, freq: 7 + rnd() * 5,
-      keen: 0.4 + rnd() * 0.6, // how readily they get up
-      fidget: rnd() * 100, fidgetRate: 0.05 + rnd() * 0.12,
-    };
-    const shirt = col.setHex(shirts[Math.floor(rnd() * shirts.length)]).multiplyScalar(0.75 + rnd() * 0.25);
-    bodies.setColorAt(i, shirt);
-    arms.setColorAt(2 * i, shirt);
-    arms.setColorAt(2 * i + 1, shirt);
-    heads.setColorAt(i, col.setHex(SKINS[Math.floor(rnd() * SKINS.length)]));
-    return s;
-  });
-  for (const m of [bodies, heads, arms]) m.instanceColor.needsUpdate = true;
-  bodies.castShadow = false;
-  parent.add(bodies, heads, arms);
-
-  const o = new THREE.Object3D();
-  const v = new THREE.Vector3();
-  let excite = 0, t = 0, dirty = true;
-  function pose(i, s) {
-    const e = excite * s.keen;
-    // standing spectators are taller and stand on the ground; the seated rise for big moments
-    const rise = s.standing ? 0.55 : Math.max(0, e - 0.45) * 0.9 * 0.55;
-    const hop = e * 0.05 * Math.max(0, Math.sin(t * s.freq * 0.5 + s.phase));
-    const base = s.y + rise + hop;
-    o.position.set(s.x, base + 0.28 * s.h, s.z);
-    o.rotation.set(0, s.yaw, 0);
-    o.scale.set(1, s.h, 1);
-    o.updateMatrix();
-    bodies.setMatrixAt(i, o.matrix);
-    o.position.y = base + 0.56 * s.h + 0.12;
-    o.scale.set(1, 1, 1);
-    o.updateMatrix();
-    heads.setMatrixAt(i, o.matrix);
-    // arms: down at rest; clapping in front for applause; waving overhead when excited
-    const fid = idle ? Math.max(0, Math.sin(t * s.fidgetRate + s.fidget) - 0.93) * 14 : 0;
-    const clap = Math.min(1, e * 2.2);
-    const up = Math.max(0, e - 0.55) * 2.2;
-    for (const side of [-1, 1]) {
-      v.set(side * 0.25, base + 0.52 * s.h, 0).applyAxisAngle(o.up, s.yaw);
-      o.position.set(s.x + v.x, v.y, s.z + v.z);
-      const wave = Math.sin(t * s.freq + s.phase + side) * 0.25;
-      // rotation x lifts the arm forward (negative) and z swings it out to its own side
-      const fwd = Math.min(3.0, clap * 1.25 + up * 1.6 + (side > 0 ? fid * 1.4 : 0));
-      const inward = clap * (0.3 + Math.sin(t * s.freq + s.phase) * 0.25) * (1 - Math.min(1, up));
-      const out = side * (Math.min(1, up) * (0.35 + wave) - inward);
-      o.rotation.set(-fwd, s.yaw, out, 'YXZ');
-      o.updateMatrix();
-      arms.setMatrixAt(2 * i + (side > 0 ? 1 : 0), o.matrix);
-    }
-  }
-  function update(dt) {
-    t += dt;
-    excite *= Math.exp(-dt * 0.45);
-    if (excite < 0.004) excite = 0;
-    if (!dirty && excite === 0 && !idle) return;
-    for (let i = 0; i < n; i++) pose(i, P[i]);
-    for (const m of [bodies, heads, arms]) m.instanceMatrix.needsUpdate = true;
-    dirty = excite > 0;
-  }
-  update(0);
-  return {
-    update,
-    cheer(i) { excite = Math.max(excite, Math.min(1, i)); dirty = true; },
-    get count() { return n; },
-  };
-}
 
 // ---------------------------------------------------------------- textures
 function chainLinkTexture() {

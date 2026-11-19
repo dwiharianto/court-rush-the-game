@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { COURT, ARENA, CAMERA, RENDER, LIGHT, COLORS, NAMES, BALL, SURFACES, DEFAULT_SURFACE, netHeightAt } from './config.js';
 import { createFigure, POSES } from './human.js';
 import { canvasTexture, makeRng, noiseTexture, boardTexture, box, grassFloorTexture } from './gfx.js';
-import { buildClub, buildCrowd } from './club.js';
+import { buildClub } from './club.js';
+import { buildCrowd, bakeCrowd } from './crowd.js';
 
 // ---------------------------------------------------------------- surfaces
 // Grass: mown stripes across the court, with worn, browner patches where players
@@ -742,6 +743,12 @@ export function createWorld() {
     get venue() { return venue; },
     // the spectators react to a point: 0..1
     cheer(i) { (venue === 'club' ? club.crowd : boards.crowd).cheer(i); },
+    // the spectators become real bodies once those have loaded: { male, female }, and the rig builder
+    setCrowdBodies(bodies, createRig) {
+      const set = bakeCrowd(bodies, createRig);
+      boards.crowd.upgrade(set);
+      club.crowd.upgrade(set);
+    },
     // the rally on the next court, for its distant sounds
     onAmbientHit: club.onHit,
     updateBall: ballView.update, addBounceMark: (x, z) => { if (marks) ballView.addMark(x, z); },

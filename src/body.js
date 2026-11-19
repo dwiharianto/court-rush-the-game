@@ -35,6 +35,21 @@ export async function loadBodies() {
   return cache;
 }
 
+// The spectators' bodies: the same bodies simplified (tools/build-crowd.mjs).
+const CROWD_URLS = {
+  male: new URL('./assets/crowd-male.json', import.meta.url).href,
+  female: new URL('./assets/crowd-female.json', import.meta.url).href,
+};
+export async function loadCrowdBodies() {
+  const out = {};
+  await Promise.all(Object.entries(CROWD_URLS).map(async ([g, url]) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`crowd body ${g}: ${res.status}`);
+    out[g] = parseBody(await res.json());
+  }));
+  return out;
+}
+
 export function getBody(gender) {
   return cache[gender] || cache.male || null;
 }
