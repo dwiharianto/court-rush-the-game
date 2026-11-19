@@ -837,6 +837,7 @@ async function boot() {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const world = createWorld();
+  if (import.meta.env.DEV) window.__world = world; // for checking the scene from the browser console
   const hud = createHud();
   const input = createInput();
   hud.onChallenge(() => input.press('challenge'));
@@ -901,6 +902,18 @@ async function boot() {
     try { localStorage.setItem('courtRush.surface', name); } catch { /* storage blocked */ }
   }
   hud.onSurface(applySurface);
+  // venue: the stadium or the country club, also remembered
+  function applyVenue(name) {
+    world.setVenue(name);
+    audio.setVenue(name);
+    try { localStorage.setItem('courtRush.venue', name); } catch { /* storage blocked */ }
+  }
+  hud.onVenue(applyVenue);
+  let savedVenue = null;
+  try { savedVenue = localStorage.getItem('courtRush.venue'); } catch { /* storage blocked */ }
+  hud.setVenue(savedVenue === 'club' ? 'club' : 'stadium');
+  // the rally on the next court at the club, heard faintly
+  world.onAmbientHit((x, z) => audio.distantHit(x, z));
   let savedSurface = null;
   try { savedSurface = localStorage.getItem('courtRush.surface'); } catch { /* storage blocked */ }
   hud.setSurface(SURFACES[savedSurface] ? savedSurface : DEFAULT_SURFACE);
@@ -1055,17 +1068,22 @@ async function boot() {
 
   // The crowd: applause sized to the point. Clean winners and long rallies get more;
   // your own errors get only a little, and only after a long rally.
+  // the stands react with the sound: clapping, and on their feet for the big ones
+  function react(kind, i = 0.5) {
+    audio.react(kind, i);
+    world.cheer(kind === 'ovation' ? 1 : kind === 'roar' ? 0.65 + 0.35 * i : Math.min(0.6, i * 0.75));
+  }
   function crowdReact(e) {
     const rally = Math.min(1, e.rallyHits / 12);
     const clean = e.reason === 'ace' || e.reason === 'double';
     const game = e.game ? 0.15 : 0;
     if (e.winner === 0) {
-      if (clean && (rally > 0.5 || e.game)) audio.react('roar', 0.5 + 0.5 * rally);
-      else audio.react('applause', (clean ? 0.45 : 0.3) + 0.45 * rally + game);
+      if (clean && (rally > 0.5 || e.game)) react('roar', 0.5 + 0.5 * rally);
+      else react('applause', (clean ? 0.45 : 0.3) + 0.45 * rally + game);
     } else if (clean) {
-      audio.react('applause', 0.25 + 0.5 * rally + game);
+      react('applause', 0.25 + 0.5 * rally + game);
     } else if (rally > 0.4 || game) {
-      audio.react('applause', 0.15 + 0.35 * rally + game);
+      react('applause', 0.15 + 0.35 * rally + game);
     }
   }
 
@@ -1214,7 +1232,7 @@ async function boot() {
           talk('challenge', 0.7, 0.4);
           hud.showMessage('CHALLENGE', shortName(e.side), 1.4);
           hud.showReview({ margin: e.margin, line: e.line, surfaceColor: SURFACES[game.surface].court });
-          audio.react('applause', 0.15);
+          react('applause', 0.15);
           break;
         case 'challengeDenied':
           hud.showCall(e.reason === 'none left' ? 'NO CHALLENGES LEFT' : e.reason === 'late' ? 'TOO LATE TO CHALLENGE' : 'NO CALL TO CHALLENGE');
@@ -1223,7 +1241,7 @@ async function boot() {
           hud.reviewVerdict(e.inside, e.margin);
           hud.setChallenges(game.challenges);
           hud.showMessage(e.overturned ? 'CALL OVERTURNED' : 'CALL STANDS', e.inside ? 'BALL IN' : 'BALL OUT', 1.8);
-          if (e.overturned) { audio.call('Correction!'); audio.react('applause', 0.45); }
+          if (e.overturned) { audio.call('Correction!'); react('applause', 0.45); }
           talk(e.overturned ? 'overturned' : 'stands', 0.7, 1.2);
           break;
         case 'replay':
@@ -1299,8 +1317,8 @@ async function boot() {
               stats: statsData(),
             });
           }
-          if (won) audio.react('ovation');
-          else audio.react('applause', 1);
+          if (won) react('ovation');
+          else react('applause', 1);
           break;
         }
         default:

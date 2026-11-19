@@ -16,6 +16,7 @@ export function createAudio(options = {}) {
   const bank = { applauseLong: [], applauseShort: [], whistles: [], ball: {}, grunt: [[], []], calls: {} };
   let murmurGain = null;
   let crowdMode = 'chatter', swellIn = 0;
+  let venue = 'stadium', birdIn = 2;
   let muted = false, paused = false;
   let surface = 'clay'; // the court changes how bounces, slides and stops sound
   const rnd = options.rng || Math.random;
@@ -54,6 +55,8 @@ export function createAudio(options = {}) {
     crowd.gain.value = AUDIO.crowd;
     crowd.connect(master);
     crowd.connect(verbSend);
+
+    applyVenue(true);
 
     const white = new Float32Array(sr * 2);
     for (let i = 0; i < white.length; i++) white[i] = Math.random() * 2 - 1;
@@ -477,7 +480,47 @@ export function createAudio(options = {}) {
     murmurGain.gain.setTargetAtTime(target, now(), immediate ? 0.5 : mode === 'hush' ? 0.7 : 1.2);
   }
 
+  // ------------------------------------------------------------ venue
+  // The stadium has a big reverb and a full crowd; the club is open air, with a
+  // smaller crowd, birds in the trees and the next court's rally in the distance.
+  function applyVenue(immediate = false) {
+    if (!ctx || !verbSend) return;
+    const club = venue === 'club';
+    const tc = immediate ? 0.01 : 0.4;
+    verbSend.gain.setTargetAtTime(AUDIO.reverb * (club ? 0.3 : 1), now(), tc);
+    crowd.gain.setTargetAtTime(AUDIO.crowd * (club ? 0.55 : 1), now(), tc);
+  }
+
+  // a short song: two to five quick rising chirps from somewhere in the trees
+  function bird() {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = rnd() * 1.6 - 0.8;
+    const g = ctx.createGain();
+    g.gain.value = AUDIO.levels.birds * (0.5 + rnd() * 0.5);
+    pan.connect(g).connect(master);
+    const n = 2 + Math.floor(rnd() * 4);
+    const base = 2600 + rnd() * 2200, rise = 1.2 + rnd() * 0.35, gap = 0.08 + rnd() * 0.07;
+    for (let i = 0; i < n; i++) {
+      const t0 = now() + 0.02 + i * gap;
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(base, t0);
+      o.frequency.exponentialRampToValueAtTime(base * rise, t0 + 0.045);
+      o.frequency.exponentialRampToValueAtTime(base * 0.92, t0 + 0.075);
+      const e = ctx.createGain();
+      e.gain.setValueAtTime(0, t0);
+      e.gain.linearRampToValueAtTime(1, t0 + 0.01);
+      e.gain.linearRampToValueAtTime(0, t0 + 0.07);
+      o.connect(e).connect(pan);
+      o.start(t0);
+      o.stop(t0 + 0.09);
+    }
+  }
+
   function update(dt) {
+    if (ctx && venue === 'club' && !paused && ctx.state === 'running') {
+      birdIn -= dt;
+      if (birdIn <= 0) { birdIn = 1.2 + rnd() * 5; bird(); }
+    }
     if (!ctx || !murmurGain || crowdMode !== 'chatter') return;
     // the chatter swells and settles on its own
     swellIn -= dt;
@@ -545,6 +588,12 @@ export function createAudio(options = {}) {
     setCommentary(on) { comm.enabled = !!on; },
     get commentary() { return comm.enabled; },
     setSurface(name) { surface = name; },
+    setVenue(name) { venue = name === 'club' ? 'club' : 'stadium'; applyVenue(); },
+    // a ball struck on the neighbouring court: faint, and only at the club
+    distantHit(x, z) {
+      if (!ctx || venue !== 'club' || ctx.state !== 'running') return;
+      ballHit('hit', AUDIO.levels.strike * (0.05 + rnd() * 0.03), { x: x * 0.5, z });
+    },
     react(kind, intensity = 0.5) {
       if (!ctx || !REACT[kind]) return;
       REACT[kind](Math.max(0, Math.min(1, intensity)));

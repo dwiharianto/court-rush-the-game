@@ -44,7 +44,7 @@ export const CAMERA = {
   baseAspect: 16 / 9,
   maxFov: 85,
   near: 1,
-  far: 140,
+  far: 185,
   panPosition: 0.16, // camera x per metre of player x
   panTarget: 0.3, // look-at x per metre of player x
   panLerp: 3.5,
@@ -160,6 +160,7 @@ export const AUDIO = {
     grunt: 0.5, call: 1.6, // line-call volume relative to the master volume (speech fallback)
     callClip: 1.1, // the recorded calls
     commentary: 0.85,
+    birds: 0.03, // birdsong at the club
     squeak: 0.32,
   },
 };

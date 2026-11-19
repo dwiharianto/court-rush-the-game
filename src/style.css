@@ -65,7 +65,7 @@ html, body {
   transition: opacity 0.25s; padding: 16px; overflow: auto;
 }
 #menu.hidden { opacity: 0; pointer-events: none; }
-.menu-card { width: min(440px, 100%); text-align: center; }
+.menu-card { width: min(440px, 100%); text-align: center; margin: auto; } /* auto margins keep the top reachable when it scrolls */
 .menu-tour { font-size: 11px; letter-spacing: 0.3em; color: #cfe1f5; font-weight: 700; }
 .menu-card h1 {
   margin: 6px 0 14px; font-size: clamp(44px, 9vw, 76px); line-height: 0.95; font-weight: 900;
@@ -97,6 +97,13 @@ body.touch #controls-keys { display: none; }
   font: inherit; font-size: 20px; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
 }
 #play:hover { background: #e6ff55; }
+@media (max-height: 820px) {
+  .menu-card h1 { font-size: clamp(40px, 7.5vh, 64px); margin: 2px 0 10px; }
+  .menu-levels { margin: 8px 0; }
+  .menu-levels button { padding: 7px 0; }
+  .menu-controls > div { padding: 4px 0; }
+  #play { padding: 11px 0; }
+}
 #play:focus-visible, .menu-levels button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 .menu-foot { margin-top: 10px; font-size: 11px; letter-spacing: 0.16em; color: #9fb3c8; text-transform: uppercase; }
 

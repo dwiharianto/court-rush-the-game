@@ -57,6 +57,15 @@ export function createHud(doc = document) {
     if (surfaceHandler) surfaceHandler(name);
   };
   for (const b of surfaceButtons) b.addEventListener('click', () => pickSurface(b.dataset.surface));
+  // venue: the stadium show court or the country club, previewed behind the menu
+  const venueButtons = [...doc.querySelectorAll('#menu-venues button')];
+  let venue = 'stadium', venueHandler = null;
+  const pickVenue = (name) => {
+    venue = name;
+    for (const o of venueButtons) o.classList.toggle('on', o.dataset.venue === name);
+    if (venueHandler) venueHandler(name);
+  };
+  for (const b of venueButtons) b.addEventListener('click', () => pickVenue(b.dataset.venue));
   // mode (exhibition or tournament), the tournament event, and the match length
   const modeButtons = [...doc.querySelectorAll('#menu-modes button')];
   const eventButtons = [...doc.querySelectorAll('#menu-events button')];
@@ -86,7 +95,7 @@ export function createHud(doc = document) {
   for (const b of eventButtons) b.addEventListener('click', () => pickEvent(b.dataset.event));
   for (const b of lengthButtons) b.addEventListener('click', () => pickLength(+b.dataset.len));
   abandonButton.addEventListener('click', () => { if (abandonHandler) abandonHandler(); });
-  playButton.addEventListener('click', () => { if (playHandler) playHandler({ level, surface, mode, eventId, length }); });
+  playButton.addEventListener('click', () => { if (playHandler) playHandler({ level, surface, venue, mode, eventId, length }); });
   const pauseEl = doc.getElementById('pause');
   const pauseButton = doc.getElementById('pause-btn');
   const resumeButton = doc.getElementById('resume');
@@ -190,7 +199,7 @@ export function createHud(doc = document) {
       if (e && eventButtons.some((b) => b.dataset.event === e)) pickEvent(e);
       if (m === 'exhibition' || m === 'tournament') pickMode(m);
     },
-    choices() { return { mode, eventId, length, level, surface }; },
+    choices() { return { mode, eventId, length, level, surface, venue }; },
     // a running tournament locks the event and length; the play button names the next match
     setTournamentState({ active, label }) {
       for (const b of [...eventButtons, ...lengthButtons, ...levelButtons]) b.disabled = !!active && mode === 'tournament';
@@ -224,6 +233,8 @@ export function createHud(doc = document) {
       els[1].name.textContent = cpu;
     },
     onSurface(handler) { surfaceHandler = handler; },
+    onVenue(handler) { venueHandler = handler; },
+    setVenue(name) { if (venueButtons.some((b) => b.dataset.venue === name)) pickVenue(name); },
     setSurface(name) { if (surfaceButtons.some((b) => b.dataset.surface === name)) pickSurface(name); },
     onPause(handler) { pauseHandler = handler; },
     onResume(handler) { resumeHandler = handler; },

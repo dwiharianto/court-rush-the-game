@@ -16,6 +16,8 @@ npm run build    # static build in dist/
 
 Pick Clay, Grass or Hard court on the start screen. Clay is slow with a high bounce and long slides; grass is fast and low, with shorter slides; hard courts sit in between, with short skids and squeaking shoes. Bounces, slides and stops sound different on each.
 
+Pick the venue too. **Stadium** is the show court: a big hall with packed stands, sponsor boards and a TV camera. **Country club** is an outdoor club court: chain-link fencing with a green windscreen, small aluminium bleachers either side, people standing along the fence, trees swaying all round, a clubhouse with a lunch terrace, flags in the breeze, people strolling on the paths and a club rally going on at the next court. It sounds different as well: open air with little echo, a smaller crowd, birdsong and the faint pock of the next court's rally. At both venues the spectators clap after good points and get up on their feet for the big ones.
+
 ## Your player
 
 Customise player, on the start screen, opens a panel with a close-up of your player: name, body (male or female), shirt, shorts, shoes, headwear, skin tone, hair colour and hair style. Choices are saved on the device. Each match the CPU gets an invented name (never a real player's) and an outfit that does not clash with yours.
@@ -44,7 +46,9 @@ Customise player, on the start screen, opens a panel with a close-up of your pla
 | Module | What it does |
 | --- | --- |
 | `src/config.js` | Every tuning number, including CPU difficulty levels |
-| `src/scene.js` | Court, net, arena, lighting, camera, ball view |
+| `src/scene.js` | Court, net, stadium, lighting, camera, ball view |
+| `src/club.js` | The country club venue, and the animated spectators both venues use |
+| `src/gfx.js` | Small texture and mesh helpers |
 | `src/human.js` | Figure builder and procedural animation behind `setPose` / `update` |
 | `src/ball.js` | Fixed-step ball physics and shot planning |
 | `src/rules.js` | Court tests and scoring |
