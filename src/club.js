@@ -3,7 +3,7 @@
 // trees all round, a clubhouse with a terrace, a neighbouring court with its own
 // rally going on, people strolling on the paths and flags in the breeze.
 import * as THREE from 'three';
-import { ARENA, NAMES } from './config.js';
+import { ARENA, CLUB, NAMES } from './config.js';
 import { createFigure, makePose, POSES } from './human.js';
 import { canvasTexture, makeRng, noiseTexture, boardTexture, box, grassFloorTexture } from './gfx.js';
 import { buildCrowd } from './crowd.js';
@@ -188,7 +188,7 @@ export function buildClub(parent, { speedBoard, clockBoard } = {}) {
   parent.add(group);
   const rnd = makeRng(2024);
   const clock = []; // per-frame updates
-  const X = 10.4, ZB = ARENA.backWallZ, ZF = -ARENA.backWallZ, H = 3.6;
+  const X = CLUB.fenceX, ZB = ARENA.backWallZ, ZF = CLUB.fenceZ, H = CLUB.fenceHeight;
 
   buildSky(group);
 

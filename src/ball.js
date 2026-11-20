@@ -22,6 +22,7 @@ export function createBall() {
     inPlay: false, // the rules are watching this ball
     isServe: false, // a serve that has not been returned yet
     visible: false,
+    walls: [], // the venue's walls and fences (config WALLS)
   };
 }
 
@@ -30,7 +31,7 @@ export function copyBall(out, b) {
   out.vx = b.vx; out.vy = b.vy; out.vz = b.vz;
   out.spin = b.spin; out.lift = b.lift; out.bounces = b.bounces;
   out.lastHitter = b.lastHitter; out.hitId = b.hitId; out.court = b.court;
-  out.inPlay = b.inPlay; out.visible = b.visible;
+  out.inPlay = b.inPlay; out.visible = b.visible; out.walls = b.walls;
   return out;
 }
 
@@ -99,6 +100,25 @@ export function stepBall(b, dt, events) {
           b.vy = Math.min(b.vy, 0) * 0.3;
           if (events) events.push({ type: 'net', x: xn, y: yn, cord: depth < 1 });
         }
+      }
+    }
+
+    // walls and fences: the ball comes off them slowly, as off canvas or chain-link
+    if (b.walls) {
+      for (const w of b.walls) {
+        const pos = w.axis === 'x' ? b.x : b.z, prev = w.axis === 'x' ? px : pz;
+        const limit = w.out * w.at - r;
+        if (w.out * pos <= limit || w.out * prev > limit + 0.001) continue;
+        const along = w.axis === 'x' ? b.z : b.x;
+        if (b.y > w.h || along < w.span[0] || along > w.span[1]) continue;
+        const vKey = w.axis === 'x' ? 'vx' : 'vz', tKey = w.axis === 'x' ? 'vz' : 'vx';
+        const impact = Math.abs(b[vKey]);
+        b[w.axis] = w.at - w.out * r;
+        b[vKey] = -b[vKey] * w.e;
+        b[tKey] *= 0.6;
+        b.vy *= 0.7;
+        b.lift = 0;
+        if (events) events.push({ type: 'wall', x: b.x, y: b.y, z: b.z, v: impact, kind: w.kind });
       }
     }
 

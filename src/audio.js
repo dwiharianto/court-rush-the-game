@@ -378,6 +378,23 @@ export function createAudio(options = {}) {
     for (let i = 0; i < 4; i++) burst(at + 0.02 + i * 0.028, { f: 1700 + rnd() * 600, q: 3, amp: 0.25 * k * (1 - i * 0.2), tau: 0.012, dest });
   }
 
+  // Ball into a chain-link fence: a soft thump and a metallic rattle that shivers along
+  // the wire; into a stadium wall: a dull padded thud.
+  function wall(opts) {
+    const at = now() + 0.005;
+    const dest = place(opts);
+    const p = Math.max(0.25, Math.min(1, (opts.speed ?? 15) / 30));
+    const k = AUDIO.levels.net * p;
+    if (opts.kind === 'fence') {
+      burst(at, { type: 'lowpass', f: 380, amp: 0.7 * k, attack: 0.003, tau: 0.05, dest });
+      for (let i = 0; i < 9; i++) burst(at + 0.01 + i * (0.02 + rnd() * 0.02), { f: 2600 + rnd() * 2200, q: 6, amp: 0.3 * k * (1 - i * 0.09), tau: 0.01 + rnd() * 0.01, dest });
+      mode(at, 1180 + rnd() * 300, 0.12, 0.05 * k, dest, 1);
+    } else {
+      mode(at, 70, 0.06, 0.8 * k, dest, 0.85);
+      burst(at, { type: 'lowpass', f: 420, amp: 1.0 * k, attack: 0.003, tau: 0.045, dest });
+    }
+  }
+
   // Ball clipping the tape: a sharp tick on the band and a short shiver of the mesh.
   function cord(opts) {
     const at = now() + 0.005;
@@ -560,7 +577,7 @@ export function createAudio(options = {}) {
     },
   };
 
-  const SFX = { strike, bounce, net, cord, slide, plant, effort };
+  const SFX = { strike, bounce, net, cord, slide, plant, effort, wall };
 
   return {
     // Browsers only allow audio after a user gesture, so this runs on Play.

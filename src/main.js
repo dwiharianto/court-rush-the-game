@@ -1,6 +1,6 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
-import { AI, AUDIO, BALL, CALLS, CONTACT, COURT, DEFAULT_SURFACE, DIVE, POWER, STAMINA, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
+import { WALLS, AI, AUDIO, BALL, CALLS, CONTACT, COURT, DEFAULT_SURFACE, DIVE, POWER, STAMINA, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
 import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet, copyBall } from './ball.js';
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox, lineMargin, serviceMargin, tiredness } from './rules.js';
 import { createAI } from './ai.js';
@@ -40,6 +40,7 @@ export function createGame(options = {}) {
   const court = SURFACES[surfaceName];
   const ball = createBall();
   ball.court = court;
+  ball.walls = WALLS[options.venue] || WALLS.stadium;
   const events = []; // drained by the view or the test
   const ballEvents = [];
   const plane = {};
@@ -536,6 +537,7 @@ export function createGame(options = {}) {
     if (!ball.inPlay) return;
     const hitter = ball.lastHitter;
     if (ball.isServe) {
+      if (e.type === 'wall') { if (ball.bounces >= 1) endPoint(hitter, 'ace'); else serveFault('out'); return; }
       if (e.type === 'net') serveFault('net');
       else if (e.type === 'netCord') ball.letPending = true;
       else if (e.type === 'bounce') {
@@ -545,6 +547,12 @@ export function createGame(options = {}) {
           else if (ball.letPending) callLet();
         } else endPoint(hitter, 'ace');
       }
+      return;
+    }
+    if (e.type === 'wall') {
+      // into a fence or wall: out if it had not bounced, a winner if it bounced in first
+      if (ball.bounces >= 1) endPoint(hitter, 'double');
+      else endPoint(1 - hitter, 'out');
       return;
     }
     if (e.type === 'net') endPoint(1 - hitter, 'net');
@@ -1032,7 +1040,7 @@ async function boot() {
     hud.setTitle(title, round);
     world.setTourName(title);
     showCourt(surface, venue);
-    game = createGame({ difficulty, level, surface, gamesToWin });
+    game = createGame({ difficulty, level, surface, gamesToWin, venue: venue || world.venue });
     rebuildView(1, look(cpu, 0xb3261e));
     hud.setNames(me.name, cpu.name);
     game.start();
@@ -1269,6 +1277,9 @@ async function boot() {
         case 'diveLand':
           audio.play('slide', { speed: e.speed + 2, x: e.x, z: e.z });
           break;
+        case 'wall':
+          audio.play('wall', { speed: e.v, kind: e.kind, x: e.x, z: e.z });
+          break;
         case 'bounce':
           if (e.n === 1) lastBounce = e;
           world.addBounceMark(e.x, e.z);
@@ -1436,6 +1447,7 @@ async function boot() {
     for (let t = 0; t < 4; t += BALL.fixedDt) {
       ghostEvents.length = 0;
       stepBall(ghost, BALL.fixedDt, ghostEvents);
+      if (ghostEvents.some((e) => e.type === 'wall')) return null; // dead before it bounces
       const bounce = ghostEvents.find((e) => e.type === 'bounce');
       if (bounce) return { x: bounce.x, z: bounce.z, at: simClock + t + BALL.fixedDt };
     }

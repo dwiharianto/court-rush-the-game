@@ -685,3 +685,30 @@ test('the landing marker predicts exactly where the CPU\'s shots bounce', async 
   assert.ok(checked > 40, `checked ${checked} bounces`);
   assert.ok(worst < 0.01, `predictions within 1 cm (worst ${worst.toFixed(4)} m)`);
 });
+
+test('balls come off the club fences and stadium walls instead of passing through', async () => {
+  const { WALLS, CLUB, ARENA } = await import('../src/config.js');
+  const run = (walls, from, v, seconds = 3) => {
+    const b = createBall();
+    Object.assign(b, from, v, { walls, visible: true });
+    const ev = [], all = [];
+    for (let t = 0; t < seconds; t += BALL.fixedDt) { ev.length = 0; stepBall(b, BALL.fixedDt, ev); all.push(...ev); }
+    return { b, walls: all.filter((e) => e.type === 'wall') };
+  };
+  // a long ball into the back fence at the club
+  let r = run(WALLS.club, { x: 0, y: 1.2, z: -15 }, { vx: 0, vy: 2, vz: -30 });
+  assert.equal(r.walls.length >= 1, true, 'hits the fence');
+  assert.equal(r.walls[0].kind, 'fence');
+  assert.ok(r.b.z > ARENA.backWallZ, 'stays inside the fence');
+  // a wide ball into the side fence
+  r = run(WALLS.club, { x: 6, y: 1, z: 2 }, { vx: 25, vy: 3, vz: 3 });
+  assert.ok(r.walls.length >= 1 && r.b.x < CLUB.fenceX, 'side fence');
+  // a ball high over the fence flies on
+  r = run(WALLS.club, { x: 0, y: 6, z: 15 }, { vx: 0, vy: 6, vz: 20 }, 1);
+  assert.equal(r.walls.length, 0, 'over the top');
+  // the stadium's back wall stops it; above the low side boards it carries on into the stands
+  r = run(WALLS.stadium, { x: 0, y: 1.2, z: -15 }, { vx: 0, vy: 2, vz: -30 });
+  assert.ok(r.walls.length >= 1 && r.b.z > ARENA.backWallZ, 'stadium back wall');
+  r = run(WALLS.stadium, { x: 5, y: 3, z: 0 }, { vx: 25, vy: 4, vz: 0 }, 0.6);
+  assert.equal(r.walls.length, 0, 'over the side boards');
+});

@@ -37,6 +37,26 @@ export const ARENA = {
   seatFill: 0.86,
 };
 
+// The country club court's chain-link fence (club.js builds it to these sizes).
+export const CLUB = { fenceX: 10.4, fenceZ: -ARENA.backWallZ, fenceHeight: 3.6 };
+
+// Solid surfaces the ball can hit at each venue. axis: the wall's normal; at: its
+// position; out: which way is outside (+1 or -1); h: height; span: [min, max] along
+// the other axis; e: how much speed comes back off it (chain-link is soft).
+export const WALLS = {
+  stadium: [
+    { axis: 'z', at: ARENA.backWallZ, out: -1, h: ARENA.backWallHeight, span: [-40, 40], e: 0.45, kind: 'wall' },
+    { axis: 'x', at: ARENA.sideWallX, out: 1, h: ARENA.sideWallHeight, span: [ARENA.backWallZ, ARENA.standZMax], e: 0.5, kind: 'wall' },
+    { axis: 'x', at: -ARENA.sideWallX, out: -1, h: ARENA.sideWallHeight, span: [ARENA.backWallZ, ARENA.standZMax], e: 0.5, kind: 'wall' },
+  ],
+  club: [
+    { axis: 'z', at: ARENA.backWallZ, out: -1, h: CLUB.fenceHeight, span: [-CLUB.fenceX, CLUB.fenceX], e: 0.25, kind: 'fence' },
+    { axis: 'z', at: CLUB.fenceZ, out: 1, h: CLUB.fenceHeight, span: [-CLUB.fenceX, CLUB.fenceX], e: 0.25, kind: 'fence' },
+    { axis: 'x', at: CLUB.fenceX, out: 1, h: CLUB.fenceHeight, span: [ARENA.backWallZ, CLUB.fenceZ], e: 0.25, kind: 'fence' },
+    { axis: 'x', at: -CLUB.fenceX, out: -1, h: CLUB.fenceHeight, span: [ARENA.backWallZ, CLUB.fenceZ], e: 0.25, kind: 'fence' },
+  ],
+};
+
 export const CAMERA = {
   position: [0, 10.8, 29.5],
   target: [0, 0, 3.1],
