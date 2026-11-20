@@ -6,6 +6,7 @@ import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox
 import { createAI } from './ai.js';
 import { createStats, resetStats, loadStats, statRows } from './stats.js';
 import { createTournament, nextOpponent, recordResult, levelFor, roundName, bracket, EVENTS } from './tournament.js';
+import { createCareerUI } from './careerui.js';
 
 const NO_INPUT = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false };
 const TOSS_VY = Math.sqrt(2 * BALL.gravity * (SERVE.tossApex - SERVE.tossY0));
@@ -29,8 +30,9 @@ function makePlayer(side, speed, fitness = 1) {
 
 export function createGame(options = {}) {
   const rng = options.rng || Math.random;
-  const levelName = options.difficulty || AI.defaultLevel;
-  const level = { ...AI.levels[levelName] };
+  // a named level, or (in a career) settings worked out from the opponent's rating
+  const levelName = options.level ? 'custom' : options.difficulty || AI.defaultLevel;
+  const level = { ...(options.level || AI.levels[levelName]) };
   const ai = createAI(level, rng);
   const stats = createStats();
   const players = [makePlayer(0, PLAYER.speed), makePlayer(1, level.speed, level.fitness ?? 1)];
@@ -940,6 +942,20 @@ async function boot() {
   function refreshMenu() {
     const c = hud.choices();
     store.set('courtRush.choices', { mode: c.mode, eventId: c.eventId, length: c.length });
+    if (c.mode === 'career') {
+      hud.showBracket(null);
+      const s = career.summary();
+      const up = career.upcoming();
+      hud.setTournamentState({ active: false, label: !s ? 'Start a career' : up ? `Career: play ${up.round.toLowerCase()} v ${up.opponent.name}` : 'Open career' });
+      hud.setFoot(s ? `${s.retired ? 'Retired' : `Age ${s.age}`} · ${s.stage === 'junior' ? 'Junior' : 'World'} ${s.rank ? `#${s.rank}` : 'unranked'} · season ${s.season}, week ${Math.min(s.week, 12)}` : 'From junior to pro');
+      hud.setTitle('CAREER', s ? (s.stage === 'junior' ? 'JUNIORS' : 'PRO TOUR') : 'NEW');
+      world.setTourName(up ? up.event.name : 'COURT RUSH CAREER');
+      // preview the next court
+      showCourt(up ? up.surface : 'clay', up ? up.venue : 'club');
+      return;
+    }
+    hud.setFoot(`First to ${c.length} games, win by 2`);
+    showCourt(null, c.venue);
     if (c.mode !== 'tournament') {
       hud.showBracket(null);
       hud.setTournamentState({ active: false, label: 'Play' });
@@ -963,6 +979,21 @@ async function boot() {
       hud.setTitle(event.name, 'QUARTER-FINAL');
     }
   }
+  // a court and venue for one match or preview, without changing the saved choices
+  function showCourt(surface, venue) {
+    if (surface) { world.setSurface(surface); audio.setSurface(surface); }
+    if (venue) { world.setVenue(venue); audio.setVenue(venue); }
+  }
+  // ---- career mode: the hub lives in careerui.js; matches are played here
+  const career = createCareerUI(document, {
+    getProfile: () => me,
+    onClose: () => { hud.showMenu(); refreshMenu(); },
+    onPlayMatch: (m) => startMatch({
+      mode: 'career', level: m.level, surface: m.surface, venue: m.venue, gamesToWin: m.gamesToWin,
+      cpu: { ...cpuOpponent(me, seeded(hashName(m.opponent.name))), build: me.build, name: m.opponent.name },
+      title: m.event.name, round: m.round,
+    }),
+  });
   hud.onMode(refreshMenu);
   hud.onAbandon(() => { tour = null; saveTour(); refreshMenu(); });
   hud.setChoices(store.get('courtRush.choices') || {});
@@ -970,8 +1001,9 @@ async function boot() {
 
   hud.onPlay((c) => {
     audio.unlock();
+    if (c.mode === 'career') { hud.hideMenu(); career.open(); return; }
     let difficulty = c.level, surface = c.surface, gamesToWin = c.length;
-    matchMode = c.mode;
+    let title = NAMES.tour, round = 'EXHIBITION', cpuNext;
     if (c.mode === 'tournament') {
       if (!live()) {
         tour = createTournament({ eventId: c.eventId, difficulty: c.level, gamesToWin: c.length, playerName: me.name, seed: Date.now() });
@@ -981,16 +1013,26 @@ async function boot() {
       difficulty = levelFor(tour);
       surface = tour.surface;
       gamesToWin = tour.gamesToWin;
-      cpu = { ...cpuOpponent(me, seeded(hashName(opp.name))), name: opp.name }; // each entrant keeps their look
-      hud.setTitle(tour.name, roundName(tour));
-      world.setTourName(tour.name);
+      cpuNext = { ...cpuOpponent(me, seeded(hashName(opp.name))), name: opp.name }; // each entrant keeps their look
+      title = tour.name;
+      round = roundName(tour);
     } else {
-      cpu = cpuOpponent(me); // a new opponent each match
-      hud.setTitle(NAMES.tour, 'EXHIBITION');
-      world.setTourName(NAMES.tour);
+      cpuNext = cpuOpponent(me); // a new opponent each match
     }
     applySurface(surface);
-    game = createGame({ difficulty, surface, gamesToWin });
+    startMatch({ mode: c.mode, difficulty, surface, gamesToWin, cpu: cpuNext, title, round });
+  });
+  // the round of the match in play (tournament or career), for the commentary
+  let currentRound = null;
+  function startMatch({ mode, difficulty, level, surface, venue, gamesToWin, cpu: next, title, round }) {
+    audio.unlock();
+    matchMode = mode;
+    currentRound = mode === 'exhibition' ? null : round;
+    cpu = next;
+    hud.setTitle(title, round);
+    world.setTourName(title);
+    showCourt(surface, venue);
+    game = createGame({ difficulty, level, surface, gamesToWin });
     rebuildView(1, look(cpu, 0xb3261e));
     hud.setNames(me.name, cpu.name);
     game.start();
@@ -1002,7 +1044,7 @@ async function boot() {
     input.clear();
     hud.hideMenu();
     window.courtRush.game = game;
-  });
+  }
 
   // Pause: button, P or Esc, and automatically when the tab or window loses focus.
   let paused = false;
@@ -1026,6 +1068,7 @@ async function boot() {
   hud.onPause(pause);
   hud.onResume(resume);
   hud.onQuit(() => {
+    if (matchMode === 'career' && game.state !== 'matchOver') career.recordResult(false, null, true);
     paused = false;
     audio.resume();
     hud.hidePause();
@@ -1115,7 +1158,7 @@ async function boot() {
   let lastBounce = null, saidTired = [-1, -1], bpOpen = false, streak = { side: -1, n: 0 }, fillerSaid = false, openPending = false;
   const gamesPlayed = () => game.match.games[0] + game.match.games[1];
   function openMatch() {
-    const round = matchMode === 'tournament' && tour ? roundName(tour) : null;
+    const round = ['QUARTER-FINAL', 'SEMI-FINAL', 'FINAL'].includes(currentRound) ? currentRound : null;
     const surface = game.surface;
     audio.sequence([round ? `intro.${round}` : 'intro.generic', Math.random() < 0.6 ? `preview.${surface}` : 'preview.generic', 'start'], { delay: 1.0, force: true });
   }
@@ -1127,7 +1170,7 @@ async function boot() {
     bpOpen = winsGame(r);
     fillerSaid = false;
     if (winsMatch(0) || winsMatch(1)) {
-      const final = matchMode === 'tournament' && tour && roundName(tour) === 'FINAL';
+      const final = currentRound === 'FINAL';
       if (talk(final ? 'championshipPoint' : 'matchPoint', 0.9, 0.4)) return;
     } else if (bpOpen) { if (talk('breakPoint', 0.6, 0.4)) return; }
     else if (P[0] >= 3 && P[0] === P[1]) { if (talk('deuce', 0.35, 0.4)) return; }
@@ -1303,7 +1346,17 @@ async function boot() {
           const won = e.winner === 0;
           hud.hideMessage();
           const score = `${me.name} ${e.games[0]} : ${e.games[1]} ${cpu.name}`;
-          if (matchMode === 'tournament' && live()) {
+          if (matchMode === 'career') {
+            const r = career.recordResult(won, e.games);
+            hud.showMenu({
+              headline: r && r.champion ? 'CHAMPION!' : won ? 'YOU WIN' : 'YOU LOSE',
+              detail: r ? `${score} | ${r.champion ? `${r.event.name} winner` : won ? `into the ${(r.next || 'next round').toLowerCase()}` : `out in the ${r.round.toLowerCase()}`}` : score,
+              button: 'Continue career',
+              stats: statsData(),
+            });
+            refreshMenu();
+            hud.setTournamentState({ active: false, label: 'Continue career' });
+          } else if (matchMode === 'tournament' && live()) {
             const round = roundName(tour);
             recordResult(tour, won, e.games);
             saveTour();

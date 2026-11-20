@@ -76,8 +76,10 @@ export function createHud(doc = document) {
   const pickMode = (m) => {
     mode = m;
     for (const o of modeButtons) o.classList.toggle('on', o.dataset.mode === m);
-    surfacesEl.classList.toggle('hidden', m === 'tournament');
+    surfacesEl.classList.toggle('hidden', m !== 'exhibition');
     eventsEl.classList.toggle('hidden', m !== 'tournament');
+    // a career sets its own courts, opponents and match length
+    for (const id of ['menu-venues', 'menu-levels', 'menu-length']) doc.getElementById(id).classList.toggle('hidden', m === 'career');
     if (modeHandler) modeHandler({ mode, eventId, length });
   };
   const pickEvent = (id) => {
@@ -213,7 +215,7 @@ export function createHud(doc = document) {
     setChoices({ mode: m, eventId: e, length: n } = {}) {
       if (n === 3 || n === 6) pickLength(n);
       if (e && eventButtons.some((b) => b.dataset.event === e)) pickEvent(e);
-      if (m === 'exhibition' || m === 'tournament') pickMode(m);
+      if (m === 'exhibition' || m === 'tournament' || m === 'career') pickMode(m);
     },
     choices() { return { mode, eventId, length, level, surface, venue }; },
     // a running tournament locks the event and length; the play button names the next match
@@ -235,6 +237,8 @@ export function createHud(doc = document) {
           ${m.score ? `<span>${esc(m.score)}</span>` : ''}</div>`).join('') : '<div class="br-tbd">TBD</div>'}</div>`).join('')}</div>`;
       bracketEl.classList.remove('hidden');
     },
+    // the line under the play button
+    setFoot(text) { doc.getElementById('menu-foot').textContent = text; },
     setTitle(tour, round) {
       doc.getElementById('sb-tour').textContent = `${tour} | ${round}`;
       doc.getElementById('menu-tour').textContent = tour;

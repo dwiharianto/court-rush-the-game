@@ -27,6 +27,20 @@ Pick Clay, Grass or Hard court on the start screen. Clay is slow with a high bou
 
 Pick the venue too. **Stadium** is the show court: a big hall with packed stands, sponsor boards and a TV camera. **Country club** is an outdoor club court: chain-link fencing with a green windscreen, small aluminium bleachers either side, people standing along the fence, trees swaying all round, a clubhouse with a lunch terrace, flags in the breeze, people strolling on the paths and a club rally going on at the next court. It sounds different as well: open air with little echo, a smaller crowd, birdsong and the faint pock of the next court's rally. At both venues the spectators are the same MakeHuman bodies as the players, simplified to 800 triangles each (`tools/build-crowd.mjs`, using meshoptimizer), with their own clothes, skin and hair colours. They sit back or lean forward between points, clap after good points and get up on their feet, arms in the air, for the big ones.
 
+## Career
+
+Pick **Career** on the start screen to live a whole career, from a 14-year-old at the Halvik Academy to retirement.
+
+- **Juniors (14 to 17):** junior club events, Junior Opens and the four junior Crowns, with a junior ranking. Bigger events need a better ranking.
+- **Eighteen:** choose your road. Turn pro (a strong junior record earns wildcards into bigger events), or go to college (coming next). You can also turn pro early, from 16, against your coach's advice.
+- **Pro (18 to retirement):** the Circuit, the Contender Series, the Tour and the four Crowns, with a world ranking. Retire from 30; at 36 the body decides.
+- **The world:** about 190 invented players who age, improve, peak, decline and retire, and a new generation of juniors every season. Rankings count the last twelve weeks; the rest of each week is simulated.
+- **Story:** your coach Rosa Halvik, a rival from your own age group who follows you all the way, and an agent once you turn pro. Your choices (your ambition, how you treat the rival, how you handle a slump) change what they say later.
+- **Each match:** play it, or simulate it. Opponents play to their rating, so a 14-year-old's first opponents are gentler than Easy and the world's best are tougher than Hard. Opponent strength (Easy, Normal or Hard) and match length are chosen when the career starts.
+- **Saving:** the career saves itself on this device. Export it to a file from the Your career page to keep a backup or move it to another device. Quitting a match counts as a loss.
+
+Still to come: college tennis as the alternative road at 18, and player attributes (serve, power, speed, stamina) that grow with training and age and change how you play.
+
 ## Your player
 
 Customise player, on the start screen, opens a panel with a close-up of your player: name, body (male or female), shirt, shorts, shoes, headwear, skin tone, hair colour and hair style. Choices are saved on the device. Each match the CPU gets an invented name (never a real player's) and an outfit that does not clash with yours.
@@ -57,6 +71,9 @@ Customise player, on the start screen, opens a panel with a close-up of your pla
 | `src/config.js` | Every tuning number, including CPU difficulty levels |
 | `src/scene.js` | Court, net, stadium, lighting, camera, ball view |
 | `src/club.js` | The country club venue |
+| `src/career.js` | Career mode logic: the invented world, ageing, calendar, rankings, draws, simulation |
+| `src/story.js` | The career's story: coach, rival and agent, cards and choices |
+| `src/careerui.js` | The career hub screen and story cards |
 | `src/crowd.js` | Spectators: the player bodies baked into crowd poses and drawn instanced |
 | `src/gfx.js` | Small texture and mesh helpers |
 | `src/human.js` | Figure builder and procedural animation behind `setPose` / `update` |

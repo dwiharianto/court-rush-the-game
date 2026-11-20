@@ -601,3 +601,52 @@ test('tournaments: a draw of eight, three rounds, a champion', async () => {
     assert.deepEqual(JSON.parse(JSON.stringify(u)), u, 'a tournament is plain data (saved and resumed)');
   }
 });
+
+test('career: a whole career from fourteen to retirement, with the story', async () => {
+  const C = await import('../src/career.js');
+  const S = await import('../src/story.js');
+  const { AI } = await import('../src/config.js');
+  // opponents get stronger with rating, within the game's limits
+  const lv = [20, 35, 55, 75, 95].map((r) => C.levelForRating(r));
+  for (let i = 1; i < lv.length; i++) {
+    assert.ok(lv[i].speed >= lv[i - 1].speed && lv[i].errorRate <= lv[i - 1].errorRate, 'stronger with rating');
+  }
+  assert.equal(lv[2].speed, AI.levels.normal.speed, 'rating 55 is the Normal level');
+  for (const seed of [11, 12]) {
+    const c = C.createCareer({ name: 'L. MARLOW', seed });
+    S.storyIntro(c);
+    const names = c.players.map((p) => p.name);
+    assert.equal(new Set(names).size, names.length, 'invented names are all different');
+    assert.ok(!names.some((n) => CPU_NAMES.includes(n) && n === 'L. MARLOW'));
+    assert.equal(c.you.age, 14);
+    assert.ok(C.rankings(c, 'junior').length > 60 && C.rankings(c, 'pro').length >= 128, 'both tours are full');
+    let guard = 0, sawPro = false, sawDecision = false;
+    while (!c.you.retired && guard++ < 4000) {
+      while (c.story.queue.length) {
+        const card = c.story.queue[0];
+        assert.ok(card.text && !card.text.includes('{') && !card.text.includes('—'), 'story text is filled in, no em dashes');
+        if (card.choices) S.choose(c, 0); else S.dismiss(c);
+      }
+      if (c.pending) { sawDecision = true; assert.equal(c.you.age, 18); C.turnPro(c); S.storyAfter(c); continue; }
+      if (c.current) {
+        const m = C.nextMatch(c);
+        assert.ok(m && m.opponent.name && m.level.speed > 0);
+        C.recordMatch(c, null);
+        S.storyAfter(c);
+        continue;
+      }
+      const evs = C.thisWeek(c).filter((e) => C.entryFor(c, e).ok);
+      if (!evs.length || c.week % 5 === 4) C.restWeek(c);
+      else assert.ok(C.enterEvent(c, evs[evs.length - 1].id));
+      S.storyAfter(c);
+      if (c.you.stage === 'pro') sawPro = true;
+      if (c.current) assert.equal(c.current.draw.entrants.filter((id) => id === 0).length, 1, 'you are in the draw once');
+    }
+    assert.ok(sawDecision && sawPro, 'the junior years end in the decision, then the pro tour');
+    assert.ok(c.you.retired && c.you.age >= 30 && c.you.age <= 36);
+    assert.equal(c.you.history.length, c.you.age - 14, "one season per year of age");
+    assert.ok(C.rankings(c, 'pro').length >= 120 && C.rankings(c, 'pro').length <= 140, 'the tour stays its size');
+    assert.ok(JSON.stringify(c).length < 200000, 'the save stays small');
+    assert.deepEqual(JSON.parse(JSON.stringify(c)), c, 'a career is plain data');
+  }
+});
