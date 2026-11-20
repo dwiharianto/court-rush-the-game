@@ -96,6 +96,22 @@ export function createHud(doc = document) {
   for (const b of lengthButtons) b.addEventListener('click', () => pickLength(+b.dataset.len));
   abandonButton.addEventListener('click', () => { if (abandonHandler) abandonHandler(); });
   playButton.addEventListener('click', () => { if (playHandler) playHandler({ level, surface, venue, mode, eventId, length }); });
+  // About: why the game exists, and thanks to everyone whose work it uses
+  const aboutEl = doc.getElementById('about');
+  const aboutOpen = doc.getElementById('about-open');
+  const showAbout = (on) => {
+    aboutEl.classList.toggle('hidden', !on);
+    if (on) doc.getElementById('about-close').focus();
+    else aboutOpen.focus();
+  };
+  aboutOpen.addEventListener('click', () => showAbout(true));
+  doc.getElementById('about-close').addEventListener('click', () => showAbout(false));
+  aboutEl.addEventListener('click', (e) => { if (e.target === aboutEl) showAbout(false); });
+  doc.addEventListener('keydown', (e) => {
+    if (aboutEl.classList.contains('hidden') || e.key !== 'Escape') return;
+    e.stopImmediatePropagation();
+    showAbout(false);
+  }, true);
   const pauseEl = doc.getElementById('pause');
   const pauseButton = doc.getElementById('pause-btn');
   const resumeButton = doc.getElementById('resume');

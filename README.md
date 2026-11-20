@@ -1,8 +1,17 @@
 # Court Rush
 
-Browser tennis: a 3D, broadcast-style singles match against a CPU opponent.
-Vite, vanilla JavaScript, and Three.js. Everything (textures, figures, sounds)
-is generated in code.
+*Made for the love of tennis. Free for everyone, always.*
+
+Court Rush is a free browser tennis game for anyone who enjoys the sport: a 3D,
+broadcast-style singles match against a CPU opponent on clay, grass or hard
+courts, in a stadium or at a country club, with tournaments and a two-voice
+commentary booth. No ads, no purchases, no accounts and no tracking: settings
+and tournament progress stay in your own browser. It's built on the generosity
+of others (motion capture shared by researchers, open body models, open-source
+voices and code; see Credits), and its own code is open source under the MIT
+License, so anyone can learn from it or build on it.
+
+Built with Vite, vanilla JavaScript and Three.js.
 
 ```bash
 npm install
@@ -70,3 +79,9 @@ The players' walking, running, sprinting and backpedalling come from motion capt
 The umpire and line judge calls ("Out!", "Fault!", "Let!", "Correction!") are short recorded clips in `src/assets/calls.js`, rendered by `tools/build-calls.py` with Piper, an open-source neural text-to-speech engine (MIT), using its en-us-libritts-high voice model trained on LibriTTS by H. Zen et al. (https://www.openslr.org/60/, CC BY 4.0). They play through the game's own audio, so they work in every browser; the browser's speech voice is only a fallback. The commentary (`src/assets/commentary.js`: quick one-liners in both voices plus 47 two- and three-line exchanges and the opening and score lines, speakers 272 (play-by-play) and 314 (analyst) of the same model) is rendered the same way by `tools/build-commentary.py` and stored as MP3 (needs ffmpeg).
 
 The strokes and the serve come from motion capture too: takes from Tennis-MoCap, "A tennis action dataset: competitive performance of Caldas-Colombia tennis players" by J. D. Pulgarin-Giraldo, S. Garcia-Vega, L. G. Melo-Betancourt, S. Ramos-Bermudez, A. M. Alvarez-Meza and G. Castellanos (https://github.com/jdpulgarin/Tennis-MoCap), licensed CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/). See also Pulgarin-Giraldo et al., "A Similarity Indicator for Differentiating Kinematic Performance Between Qualified Tennis Players", LNCS 10125, 2017. `tools/fetch-strokes.sh` downloads the six takes used (forehand, two-handed backhand, both volleys, smash, serve) and `tools/build-strokes.mjs` picks a clean repetition of each, retargets it onto the game's pose keys, works out the racket's direction from the captured wrist, and fits it to the game's swing timing, writing `src/assets/strokes.js`. That file is adapted from Tennis-MoCap and is shared under the same CC BY-SA 3.0 licence. In the game the racket arm also reaches for the ball around contact, and the racket's roll in the hand and the left hand's grip on two-handed shots come from the earlier hand-made clips. CC BY-SA allows commercial use; what it asks is credit and that adaptations of the data stay under the same licence.
+
+## Licence
+
+The game's code is MIT licensed; the third-party data keeps its own licence
+(non-commercial for the running motion capture, share-alike for the strokes).
+See `LICENSE` and the credits above.
