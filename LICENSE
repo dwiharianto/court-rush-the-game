@@ -35,5 +35,6 @@ Third-party data keeps its own licence (full credits in README.md):
   CC BY-SA 3.0. This file is shared under the same licence.
 - src/assets/body-*.json, src/assets/crowd-*.json, src/assets/kit/: built from
   MakeHuman data, CC0 1.0.
-- src/assets/calls.js, src/assets/commentary.js: speech rendered with Piper
-  (MIT) using LibriTTS voices, CC BY 4.0.
+- src/assets/calls.js, src/assets/commentary.js: speech rendered offline with
+  the Piper text-to-speech engine (GPL-3.0, not included in the game) using a
+  voice model trained on LibriTTS, CC BY 4.0.

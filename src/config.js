@@ -268,13 +268,13 @@ export const DIVE = {
 };
 
 // Line calls and challenges. On a ball this close to a line the line judge can get
-// it wrong, more often the closer it is; a player can challenge with Hawk-Eye.
+// it wrong, more often the closer it is; a player can challenge it with a ball-tracking review.
 export const CALLS = {
   close: 0.08, // metres either side of the line where a call can be wrong
   missRate: 0.4, // chance of a wrong call on a ball right on the line edge, falling to 0 at `close`
   challenges: 3, // unsuccessful challenges allowed per player per match
   window: 1.4, // seconds after the bounce to challenge
-  reviewTime: 3.2, // the Hawk-Eye review
+  reviewTime: 3.2, // the ball-tracking review
   afterReview: 1.3, // pause after the verdict
   // CPU: how often it challenges a wrong call against it, and a correct close one (hopeful)
   cpuWrong: 0.7, cpuHopeful: 0.25,
@@ -446,7 +446,7 @@ export const NAMES = {
   gamesToWin: 6,
   // player and CPU names and looks live in profile.js (the CPU's are invented)
   sponsors: [
-    { text: 'VOLTIQUE', bg: '#0d3b66', fg: '#ffffff' },
+    { text: 'KESTRAVO', bg: '#0d3b66', fg: '#ffffff' },
     { text: 'NORDHAVEN AIR', bg: '#f4f1ea', fg: '#12355b' },
     { text: 'AQUOLA', bg: '#0a6c74', fg: '#eafcff' },
     { text: 'ORBEXA BANK', bg: '#1b1f27', fg: '#f2c14e' },
