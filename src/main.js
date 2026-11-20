@@ -1041,6 +1041,8 @@ async function boot() {
     world.setTourName(title);
     showCourt(surface, venue);
     game = createGame({ difficulty, level, surface, gamesToWin, venue: venue || world.venue });
+    world.clearDeadBalls();
+    wasLive = false;
     rebuildView(1, look(cpu, 0xb3261e));
     hud.setNames(me.name, cpu.name);
     game.start();
@@ -1461,6 +1463,7 @@ async function boot() {
     world.setLandingMarker(show ? { x: markerAt.x, z: markerAt.z, remaining: markerAt.at - simClock } : null, dt);
   }
 
+  let wasLive = false;
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
@@ -1494,7 +1497,14 @@ async function boot() {
     const alpha = acc / BALL.fixedDt;
     views[0].update(dt, between(game.players[0], prevP[0], alpha, drawP[0]));
     views[1].update(dt, between(game.players[1], prevP[1], alpha, drawP[1]));
-    world.updateBall(between(game.ball, prevBall, alpha, drawBall), dt);
+    // when a point (or a fault) ends, that ball becomes a dead ball for the ball kids
+    // to fetch; the next serve uses a fresh one
+    const live = game.state === 'serveReady' || game.state === 'toss' || game.state === 'rally';
+    if (wasLive && !live && game.ball.visible && game.state !== 'menu') world.spawnDeadBall(game.ball);
+    wasLive = live;
+    between(game.ball, prevBall, alpha, drawBall);
+    if (!live) drawBall.visible = false;
+    world.updateBall(drawBall, dt);
     updateMarker(dt);
     // clay dust kicked up ahead of a sliding foot
     dustClock += dt;

@@ -712,3 +712,32 @@ test('balls come off the club fences and stadium walls instead of passing throug
   r = run(WALLS.stadium, { x: 5, y: 3, z: 0 }, { vx: 25, vy: 4, vz: 0 }, 0.6);
   assert.equal(r.walls.length, 0, 'over the side boards');
 });
+
+test('ball kids fetch dead balls, go round the net, and leave balls in the stands alone', async () => {
+  const THREE = await import('three');
+  const { createBallKids } = await import('../src/ballkids.js');
+  const { WALLS, ARENA } = await import('../src/config.js');
+  const scene = new THREE.Scene();
+  const fig = () => { const o = new THREE.Object3D(); const hand = new THREE.Object3D(); o.add(hand); return { object3d: o, leftHand: hand, setPose() {} }; };
+  const kids = [-1, 1].map((s) => ({ fig: fig(), home: [s * 7.05, 1.15], ry: 0 }));
+  const bk = createBallKids(scene, kids, () => new THREE.Mesh());
+  bk.setVenue(WALLS.stadium, { x: 9.3, zMin: ARENA.backWallZ + 0.3, zMax: 17 });
+  const base = { spin: 'flat', lift: 0, bounces: 2, lastHitter: 0, hitId: 1, inPlay: false, visible: true, y: 0.033, vy: 0, vx: 0, vz: 0 };
+  bk.spawn({ ...base, x: -3, z: -9 }); // far side, left
+  bk.spawn({ ...base, x: 0, y: 4, z: 3, vx: 30, vy: 3 }); // over the side boards into the stands
+  let crossedAtPost = true, maxDist = 0;
+  for (let t = 0; t < 14; t += 1 / 60) {
+    bk.update(1 / 60);
+    const k = kids[0].fig.object3d.position;
+    // crossing the net line only outside the net posts
+    if (Math.abs(k.z) < 0.1 && Math.abs(k.x) < 6.6) crossedAtPost = false;
+    maxDist = Math.max(maxDist, Math.hypot(k.x + 7.05, k.z - 1.15));
+  }
+  assert.ok(maxDist > 9, 'the left kid ran out to the far-side ball');
+  assert.ok(crossedAtPost, 'and went round the net post, not through the net');
+  const k = kids[0].fig.object3d.position;
+  assert.ok(Math.hypot(k.x + 7.05, k.z - 1.15) < 0.1, 'and came back to the post');
+  assert.equal(scene.children.length, 0, 'the fetched ball is pocketed, the one in the stands is let go');
+  const k2 = kids[1].fig.object3d.position;
+  assert.ok(Math.hypot(k2.x - 7.05, k2.z - 1.15) < 0.1, 'nobody chased the ball into the stands');
+});

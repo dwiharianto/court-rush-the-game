@@ -1,6 +1,7 @@
 // Court, net, arena dressing, lighting, and the broadcast camera.
 import * as THREE from 'three';
-import { COURT, ARENA, CAMERA, RENDER, LIGHT, COLORS, NAMES, BALL, SURFACES, DEFAULT_SURFACE, netHeightAt } from './config.js';
+import { COURT, ARENA, CLUB, WALLS, CAMERA, RENDER, LIGHT, COLORS, NAMES, BALL, SURFACES, DEFAULT_SURFACE, netHeightAt } from './config.js';
+import { createBallKids } from './ballkids.js';
 import { createFigure, POSES } from './human.js';
 import { canvasTexture, makeRng, noiseTexture, boardTexture, box, grassFloorTexture } from './gfx.js';
 import { buildClub } from './club.js';
@@ -400,11 +401,12 @@ function buildDressing(scene) {
   place(createFigure({ shirt: 0x1d2b4a, shorts: 0xc9bfa6, trousers: true, longSleeves: true, hair: 0x555555, shoes: 0x222222 }),
     ux - 0.05, seatY + 0.04, 0, faceRight, POSES.seated, false);
 
-  // ball kids crouched just outside each net post
-  for (const s of [-1, 1]) {
-    place(createFigure({ shirt: 0xe8792f, shorts: 0x1c2333, scale: 0.8, hair: s < 0 ? 0x2a1d14 : 0x6b4a2a }),
+  // ball kids crouched just outside each net post (ballkids.js sends them after dead balls)
+  const kids = [-1, 1].map((s) => {
+    const fig = place(createFigure({ shirt: 0xe8792f, shorts: 0x1c2333, scale: 0.8, hair: s < 0 ? 0x2a1d14 : 0x6b4a2a }),
       s * 7.05, 0, 1.15, s < 0 ? faceRight : faceLeft, POSES.crouch);
-  }
+    return { fig, home: [s * 7.05, 1.15], ry: s < 0 ? faceRight : faceLeft };
+  });
 
   // line judges behind the far baseline
   [[-4.7, 0x2a1d14], [1.1, 0x8a6a4a], [4.7, 0x1a1a1a]].forEach(([x, hair]) => {
@@ -456,7 +458,7 @@ function buildDressing(scene) {
   scene.add(pit);
   const operator = place(createFigure({ shirt: 0x15171a, shorts: 0x15171a, trousers: true, hair: 0x3a2a1a, shoes: 0x111111 }),
     px, 0, pz - 0.55, 0, POSES.operator);
-  return { tvPit: [pit, operator.object3d] };
+  return { tvPit: [pit, operator.object3d], kids };
 }
 
 // ---------------------------------------------------------------- ball
@@ -708,6 +710,16 @@ export function createWorld() {
   const ballView = buildBall(scene);
   const slideFx = buildSlideFx(scene);
   const landing = buildLandingMarker(scene);
+  const deadBallMat = new THREE.MeshStandardMaterial({ color: 0xd9f23c, emissive: 0x8fa81a, emissiveIntensity: 0.55, roughness: 0.7 });
+  const deadBallGeo = new THREE.SphereGeometry(BALL.visualRadius, 12, 8);
+  const ballKids = createBallKids(scene, dressing.kids, () => {
+    const m = new THREE.Mesh(deadBallGeo, deadBallMat);
+    m.castShadow = true;
+    return m;
+  });
+  // where a kid may fetch from: inside the walls (not the stands) or the fences
+  const KID_BOUNDS = { stadium: { x: 9.3, zMin: ARENA.backWallZ + 0.3, zMax: 17 }, club: { x: CLUB.fenceX - 0.3, zMin: ARENA.backWallZ + 0.3, zMax: CLUB.fenceZ - 0.3 } };
+  ballKids.setVenue(WALLS.stadium, KID_BOUNDS.stadium);
   let marks = SURFACES[DEFAULT_SURFACE].marks;
   buildLights(scene);
 
@@ -772,6 +784,7 @@ export function createWorld() {
       boards.group.visible = !atClub;
       club.group.visible = atClub;
       for (const o of dressing.tvPit) o.visible = !atClub;
+      ballKids.setVenue(WALLS[venue], KID_BOUNDS[venue]);
       scene.background = atClub ? null : new THREE.Color(COLORS.background);
       if (atClub) court.setFloorSize(club.fence.x * 2, club.fence.front - club.fence.back, true);
       else court.setFloorSize(ARENA.floorWidth, ARENA.floorLength);
@@ -791,8 +804,12 @@ export function createWorld() {
     addSlideTrail: (...a) => { if (marks) slideFx.addTrail(...a); },
     slideDust: (...a) => { if (marks) slideFx.puff(...a); },
     setLandingMarker: (m, dt) => landing.set(m, dt),
+    // a ball that has just gone dead: it rolls on until a ball kid fetches it
+    spawnDeadBall: (state) => ballKids.spawn(state),
+    clearDeadBalls: () => ballKids.reset(),
     updateFx(dt) {
       slideFx.update(dt);
+      ballKids.update(dt);
       if (venue === 'club') club.update(dt);
       else boards.crowd.update(dt);
     },
