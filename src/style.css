@@ -452,3 +452,107 @@ body.touch #challenge-btn { bottom: auto; top: max(70px, env(safe-area-inset-top
   .cr-event button { max-width: none; }
   .cr-others { padding-left: 0; }
 }
+
+/* ---------------------------------------------------------------- start screen */
+#menu { align-items: flex-start; }
+#menu .menu-card {
+  width: min(880px, 100%); text-align: left; padding: 22px 24px 16px; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(16, 21, 29, 0.94), rgba(10, 13, 19, 0.94));
+  border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+.mn-head { text-align: center; margin-bottom: 14px; }
+#menu .menu-card h1 { margin: 4px 0 2px; font-size: clamp(40px, 7vw, 68px); }
+.mn-tag { font-size: 12px; letter-spacing: 0.28em; text-transform: uppercase; color: #e9f5b0; font-weight: 700; }
+#menu-result { text-align: center; }
+.mn-grid { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 22px; align-items: start; }
+.mn-label { font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; color: #8ea2b8; }
+.mn-main > .mn-label, .mn-side > .mn-label { margin-bottom: 8px; }
+/* the three modes as cards */
+.mn-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.mn-modes button {
+  display: grid; grid-template-columns: 30px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center;
+  text-align: left; padding: 12px 12px; border-radius: 10px; cursor: pointer; font: inherit; color: #dfe7f1;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.12); transition: transform 0.15s;
+}
+.mn-modes button:hover { background: rgba(255, 255, 255, 0.07); transform: translateY(-1px); }
+.mn-modes button.on { border-color: #d8f23a; background: linear-gradient(160deg, rgba(216, 242, 58, 0.16), rgba(216, 242, 58, 0.03)); }
+.mn-modes svg { grid-row: span 2; width: 28px; height: 28px; fill: none; stroke: #9fb3c8; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.mn-modes button.on svg { stroke: #d8f23a; }
+.mn-modes b { font-size: 15px; font-weight: 800; color: #fff; letter-spacing: 0.02em; }
+.mn-modes small { font-size: 11.5px; color: #8ea2b8; }
+.mn-modes button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+/* setting rows: a label and a segmented control */
+.mn-row { display: grid; grid-template-columns: 86px minmax(0, 1fr); align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.mn-row.hidden { display: none; }
+#menu .mn-row .menu-levels { margin: 0; gap: 0; padding: 3px; border-radius: 9px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.08); }
+#menu .mn-row .menu-levels button {
+  border: 0; border-radius: 7px; background: transparent; padding: 8px 4px; font-size: 13px; letter-spacing: 0.03em; color: #b8c6d6;
+  display: flex; align-items: center; justify-content: center; gap: 7px; line-height: 1.15;
+}
+#menu .mn-row .menu-levels button small { font-size: 10px; letter-spacing: 0.06em; opacity: 0.7; font-weight: 600; text-transform: none; }
+#menu #menu-length button, #menu .menu-events button { flex-direction: column; gap: 1px; }
+#menu .mn-row .menu-levels button.on { background: #0e2a47; color: #fff; box-shadow: inset 0 0 0 1px #d8f23a; }
+#menu .mn-row .menu-levels button:hover:not(.on):not(:disabled) { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.5); }
+.sw-clay { background: #b9573a; } .sw-grass { background: #4f8a3a; } .sw-hard { background: #2f5d93; }
+#menu #bracket { margin: 4px 0 8px; }
+/* career mode: a summary of the career in place of the match settings */
+.mn-career { border-top: 1px solid rgba(255, 255, 255, 0.07); padding-top: 12px; }
+.mn-career.hidden { display: none; }
+.mn-career p { margin: 0 0 10px; color: #c5d0dc; line-height: 1.5; font-size: 14px; }
+.mn-cstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mn-cstats div { padding: 10px; border-radius: 9px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.07); }
+.mn-cstats b { display: block; font-size: 18px; color: #fff; }
+.mn-cstats span { font-size: 11px; color: #8ea2b8; letter-spacing: 0.06em; }
+.mn-next { margin-top: 10px; padding: 10px 12px; border-radius: 9px; background: rgba(216, 242, 58, 0.07); border: 1px solid rgba(216, 242, 58, 0.25); font-size: 13.5px; color: #dfe7f1; }
+.mn-next b { color: #d8f23a; }
+.mn-steps { margin: 0; padding-left: 18px; color: #c5d0dc; font-size: 13.5px; line-height: 1.7; }
+@media (max-width: 520px) { .mn-cstats { grid-template-columns: repeat(2, 1fr); } }
+/* the side panel: your player and the play button */
+.mn-side { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.035); border: 1px solid rgba(255, 255, 255, 0.08); }
+.mn-player { display: grid; grid-template-columns: 52px 1fr; grid-template-rows: auto auto; gap: 4px 12px; align-items: center; }
+.mn-avatar {
+  grid-row: span 2; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 30%, var(--skin, #d9a37c) 0 28%, var(--shirt, #2f9e58) 29%);
+  box-shadow: 0 0 0 3px var(--shorts, #2452a6), 0 0 0 5px rgba(255, 255, 255, 0.12);
+}
+.mn-avatar span { margin-top: 24px; font-size: 12px; font-weight: 900; letter-spacing: 0.06em; color: var(--ink, #fff); }
+.mn-pinfo b { display: block; font-size: 15px; color: #fff; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mn-pinfo small { font-size: 11.5px; color: #8ea2b8; }
+#menu #customise {
+  grid-column: 2; justify-self: start; margin: 0; width: auto; padding: 5px 12px; font-size: 12px; border-radius: 6px;
+}
+#menu #play { margin-top: 4px; border-radius: 9px; box-shadow: 0 10px 30px rgba(216, 242, 58, 0.18); }
+#menu #abandon { margin: 0; }
+#menu .menu-foot { margin-top: 0; text-align: center; }
+.mn-links { display: flex; justify-content: center; gap: 18px; font-size: 13px; color: #c5d0dc; }
+.mn-links .text-link { font-weight: 700; }
+#menu .menu-credit { margin-top: 14px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+/* how to play */
+#howto { position: fixed; inset: 0; z-index: 100; display: flex; padding: 16px; overflow: auto; background: rgba(8, 12, 18, 0.8); }
+#howto.hidden { display: none; }
+#howto .menu-controls { margin: 4px 0 12px; }
+.howto-tip { font-size: 13px; color: #9fb3c8; line-height: 1.5; margin: 0 0 12px; }
+#howto-close {
+  width: 100%; padding: 11px 0; border: 0; border-radius: 6px; background: #d8f23a; color: #10140a;
+  font: inherit; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
+}
+body.touch #howto #controls-touch { display: block; }
+/* phones and narrow windows: one column, compact modes */
+@media (max-width: 760px) {
+  .mn-grid { grid-template-columns: 1fr; gap: 14px; }
+  #menu .menu-card { padding: 16px 14px 12px; }
+}
+@media (max-width: 520px) {
+  .mn-modes { gap: 6px; }
+  .mn-modes button { grid-template-columns: 1fr; justify-items: center; text-align: center; padding: 10px 6px; row-gap: 4px; }
+  .mn-modes svg { grid-row: auto; width: 24px; height: 24px; }
+  .mn-modes small { display: none; }
+  .mn-row { grid-template-columns: 1fr; gap: 6px; padding: 8px 0; }
+}
+@media (max-height: 820px) {
+  .mn-head { margin-bottom: 8px; }
+  #menu .menu-card h1 { font-size: clamp(36px, 6.5vh, 56px); }
+  .mn-modes { margin-bottom: 10px; }
+  .mn-row { padding: 6px 0; }
+}

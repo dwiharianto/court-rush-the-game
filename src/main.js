@@ -975,9 +975,10 @@ async function boot() {
       hud.showBracket(null);
       const s = career.summary();
       const up = career.upcoming();
-      hud.setTournamentState({ active: false, label: !s ? 'Start a career' : up ? `Career: play ${up.round.toLowerCase()} v ${up.opponent.name}` : 'Open career' });
+      hud.setTournamentState({ active: false, label: !s ? 'Start a career' : up ? `Play ${up.round.toLowerCase()}` : 'Continue career' });
       hud.setFoot(s ? `${s.retired ? 'Retired' : `Age ${s.age}`} · ${s.stage === 'junior' ? 'Junior' : 'World'} ${s.rank ? `#${s.rank}` : 'unranked'} · season ${s.season}, week ${Math.min(s.week, 12)}` : 'From junior to pro');
       hud.setTitle('CAREER', s ? (s.stage === 'junior' ? 'JUNIORS' : 'PRO TOUR') : 'NEW');
+      hud.setCareerPanel(s, up);
       world.setTourName(up ? up.event.name : 'COURT RUSH CAREER');
       // preview the next court, in that event's look
       world.setTheme(up ? themeForEvent(up.event) : DEFAULT_THEME);

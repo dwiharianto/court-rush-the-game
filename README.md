@@ -39,6 +39,10 @@ Pick Clay, Grass or Hard court on the start screen. Clay is slow with a high bou
 
 Pick the venue too. **Stadium** is the show court: a big hall with packed stands, sponsor boards and a TV camera. **Country club** is an outdoor club court: chain-link fencing with a green windscreen, small aluminium bleachers either side, people standing along the fence, trees swaying all round, a clubhouse with a lunch terrace, flags in the breeze, people strolling on the paths and a club rally going on at the next court. It sounds different as well: open air with little echo, a smaller crowd, birdsong and the faint pock of the next court's rally. At both venues the spectators are the same MakeHuman bodies as the players, simplified to 800 triangles each (`tools/build-crowd.mjs`, using meshoptimizer), with their own clothes, skin and hair colours. They sit back or lean forward between points, clap after good points and get up on their feet, arms in the air, for the big ones.
 
+## Start screen
+
+Pick a mode (Exhibition, Tournament or Career) from the cards at the top; only the settings that apply to that mode are shown below it (court, venue, opponent, match length, or the event in a tournament; a career shows your ranking, record and next match instead). Your player card sits beside the Play button, with Customise. The controls are under How to play, and the story behind the game under About.
+
 ## Career
 
 Pick **Career** on the start screen to live a whole career, from a 14-year-old at the Halvik Academy to retirement.

@@ -76,10 +76,15 @@ export function createHud(doc = document) {
   const pickMode = (m) => {
     mode = m;
     for (const o of modeButtons) o.classList.toggle('on', o.dataset.mode === m);
-    surfacesEl.classList.toggle('hidden', m !== 'exhibition');
-    eventsEl.classList.toggle('hidden', m !== 'tournament');
+    // only the settings that apply to this mode are shown
+    doc.getElementById('row-surfaces').classList.toggle('hidden', m !== 'exhibition');
+    doc.getElementById('row-events').classList.toggle('hidden', m !== 'tournament');
+    eventsEl.classList.remove('hidden');
+    surfacesEl.classList.remove('hidden');
     // a career sets its own courts, opponents and match length
-    for (const id of ['menu-venues', 'menu-levels', 'menu-length']) doc.getElementById(id).classList.toggle('hidden', m === 'career');
+    for (const id of ['row-venues', 'row-levels', 'row-length']) doc.getElementById(id).classList.toggle('hidden', m === 'career');
+    doc.getElementById('mn-career').classList.toggle('hidden', m !== 'career');
+    menu.dataset.mode = m;
     if (modeHandler) modeHandler({ mode, eventId, length });
   };
   const pickEvent = (id) => {
@@ -98,6 +103,21 @@ export function createHud(doc = document) {
   for (const b of lengthButtons) b.addEventListener('click', () => pickLength(+b.dataset.len));
   abandonButton.addEventListener('click', () => { if (abandonHandler) abandonHandler(); });
   playButton.addEventListener('click', () => { if (playHandler) playHandler({ level, surface, venue, mode, eventId, length }); });
+  // How to play: the controls, in a panel of their own
+  const howtoEl = doc.getElementById('howto');
+  const howtoOpen = doc.getElementById('howto-open');
+  const showHowto = (on) => {
+    howtoEl.classList.toggle('hidden', !on);
+    if (on) doc.getElementById('howto-close').focus(); else howtoOpen.focus();
+  };
+  howtoOpen.addEventListener('click', () => showHowto(true));
+  doc.getElementById('howto-close').addEventListener('click', () => showHowto(false));
+  howtoEl.addEventListener('click', (e) => { if (e.target === howtoEl) showHowto(false); });
+  doc.addEventListener('keydown', (e) => {
+    if (howtoEl.classList.contains('hidden') || e.key !== 'Escape') return;
+    e.stopImmediatePropagation();
+    showHowto(false);
+  }, true);
   // About: why the game exists, and thanks to everyone whose work it uses
   const aboutEl = doc.getElementById('about');
   const aboutOpen = doc.getElementById('about-open');
@@ -171,7 +191,22 @@ export function createHud(doc = document) {
     });
     rowsEl.appendChild(row);
   }
+  // the player card on the start screen: initials on the shirt colour, ringed in the shorts colour
+  function syncPlayerCard() {
+    if (!profile) return;
+    const av = doc.getElementById('mn-avatar');
+    av.style.setProperty('--shirt', hex(profile.shirt));
+    av.style.setProperty('--shorts', hex(profile.shorts));
+    av.style.setProperty('--skin', hex(profile.skin));
+    const parts = profile.name.replace(/[^A-Z ]/g, ' ').trim().split(/\s+/);
+    av.querySelector('span').textContent = (parts[0][0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '');
+    const lum = ((profile.shirt >> 16) & 255) * 0.3 + ((profile.shirt >> 8) & 255) * 0.59 + (profile.shirt & 255) * 0.11;
+    av.style.setProperty('--ink', lum > 150 ? '#10140a' : '#ffffff');
+    doc.getElementById('mn-pname').textContent = profile.name;
+    doc.getElementById('mn-pbuild').textContent = profile.build === 'female' ? 'Plays on the women\'s tour' : 'Plays on the men\'s tour';
+  }
   function syncCustom() {
+    syncPlayerCard();
     nameInput.value = profile.name;
     for (const [key, buttons] of Object.entries(rowButtons)) {
       for (const b of buttons) {
@@ -183,6 +218,7 @@ export function createHud(doc = document) {
   }
   nameInput.addEventListener('input', () => {
     profile.name = cleanName(nameInput.value);
+    syncPlayerCard();
     if (customHandler) customHandler({ ...profile });
   });
   nameInput.addEventListener('blur', () => { nameInput.value = profile.name; });
@@ -239,6 +275,20 @@ export function createHud(doc = document) {
           <div class="${m.winner === 'b' ? 'win' : m.winner ? 'lose' : ''}${m.b.cpu ? '' : ' you'}">${name(m.b)}</div>
           ${m.score ? `<span>${esc(m.score)}</span>` : ''}</div>`).join('') : '<div class="br-tbd">TBD</div>'}</div>`).join('')}</div>`;
       bracketEl.classList.remove('hidden');
+    },
+    // career mode's summary on the start screen: s from careerui.summary(), next match or null
+    setCareerPanel(s, next) {
+      const el = doc.getElementById('mn-career');
+      if (!s) {
+        el.innerHTML = `<p>Live a whole career, from a 14-year-old at the Halvik Academy to your last match on tour.</p>
+          <ol class="mn-steps"><li>Juniors: club events, Junior Opens and the junior Crowns</li><li>At eighteen: turn pro, or take the college road</li><li>The pro tour: the Circuit up to the four Crowns</li></ol>`;
+        return;
+      }
+      const rank = s.rank ? `#${s.rank}` : 'Unranked';
+      el.innerHTML = `<p><b>${esc(s.name)}</b>, ${s.retired ? 'retired' : `age ${s.age}`}, ${s.stage === 'junior' ? 'on the junior circuit' : 'on the pro tour'}. Season ${s.season}, week ${Math.min(s.week, 12)}.</p>
+        <div class="mn-cstats"><div><b>${rank}</b><span>${s.stage === 'junior' ? 'Junior' : 'World'} ranking</span></div>
+        <div><b>${s.record.w}-${s.record.l}</b><span>Win-loss</span></div><div><b>${s.titles}</b><span>Titles</span></div></div>
+        ${next ? `<div class="mn-next">Next: <b>${esc(next.round.toLowerCase())}</b> at the ${esc(next.event.name)} v ${esc(next.opponent.name)}</div>` : ''}`;
     },
     // the line under the play button
     setFoot(text) { doc.getElementById('menu-foot').textContent = text; },

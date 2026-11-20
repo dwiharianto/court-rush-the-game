@@ -83,11 +83,9 @@
         <button id="about-close" type="button">Back to the game</button>
       </div>
     </div>
-    <div id="menu">
-      <div class="menu-card">
-        <div class="menu-tour" id="menu-tour"></div>
-        <h1>COURT RUSH</h1>
-        <div id="menu-result"><div id="menu-headline"></div><div id="menu-detail"></div><div class="stats" id="menu-stats"></div></div>
+    <div id="howto" class="hidden" role="dialog" aria-modal="true" aria-labelledby="howto-title">
+      <div class="about-card">
+        <h2 id="howto-title">How to play</h2>
         <div class="menu-controls" id="controls-keys">
           <div><b>Arrows or WASD</b><span>Move, and aim at contact</span></div>
           <div><b>Space</b><span>Drive (smash on a high ball). Hold for power, release to swing</span></div>
@@ -96,6 +94,7 @@
           <div><b>At the net</b><span>Space volleys, K drop volleys</span></div>
           <div><b>Serve</b><span>Press once to toss, again at the top</span></div>
           <div><b>C</b><span>Challenge a line call</span></div>
+          <div><b>P or Esc</b><span>Pause</span></div>
         </div>
         <div class="menu-controls" id="controls-touch">
           <div><b>Stick</b><span>Move, and aim at contact</span></div>
@@ -104,41 +103,88 @@
           <div><b>At the net</b><span>HIT volleys, SLICE drop volleys</span></div>
           <div><b>Serve</b><span>Tap once to toss, again at the top</span></div>
         </div>
-        <div class="menu-levels menu-modes" id="menu-modes" aria-label="Mode">
-          <button data-mode="exhibition" class="on">Exhibition</button>
-          <button data-mode="tournament">Tournament</button>
-          <button data-mode="career">Career</button>
+        <p class="howto-tip">Time your swing as the ball reaches you: the timing note after each shot tells you if you were early or late. The ring on the court shows where the CPU's shot will bounce.</p>
+        <button id="howto-close" type="button">Got it</button>
+      </div>
+    </div>
+    <div id="menu">
+      <div class="menu-card">
+        <header class="mn-head">
+          <div class="menu-tour" id="menu-tour"></div>
+          <h1>COURT RUSH</h1>
+          <div class="mn-tag">Made for the love of tennis</div>
+        </header>
+        <div id="menu-result"><div id="menu-headline"></div><div id="menu-detail"></div><div class="stats" id="menu-stats"></div></div>
+        <div class="mn-grid">
+          <section class="mn-main" aria-label="Game setup">
+            <div class="mn-label">Mode</div>
+            <div class="mn-modes" id="menu-modes" aria-label="Mode">
+              <button data-mode="exhibition" class="on" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M5.5 6.5c3.5 2.6 3.5 8.4 0 11M18.5 6.5c-3.5 2.6-3.5 8.4 0 11"/></svg>
+                <b>Exhibition</b><small>One match, your rules</small>
+              </button>
+              <button data-mode="tournament" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 3M17 6h2.5a2.5 2.5 0 0 1-2.6 3M12 13v4M8.5 20h7M10 17h4"/></svg>
+                <b>Tournament</b><small>Eight players, one champion</small>
+              </button>
+              <button data-mode="career" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19l5-5 3.5 3.5L20 9"/><path d="M15 9h5v5"/></svg>
+                <b>Career</b><small>From junior to pro</small>
+              </button>
+            </div>
+            <div class="mn-row" id="row-events"><span class="mn-label">Event</span>
+              <div class="menu-levels menu-events hidden" id="menu-events" aria-label="Tournament">
+                <button data-event="porto" class="on">Porto Velano<small>Clay</small></button>
+                <button data-event="ashbridge">Ashbridge<small>Grass</small></button>
+                <button data-event="harbour">Harbour City<small>Hard</small></button>
+              </div>
+            </div>
+            <div id="bracket" class="hidden"></div>
+            <div class="mn-career hidden" id="mn-career" aria-live="polite"></div>
+            <div class="mn-row" id="row-surfaces"><span class="mn-label">Court</span>
+              <div class="menu-levels menu-surfaces" id="menu-surfaces" aria-label="Court surface">
+                <button data-surface="clay" class="on"><i class="sw sw-clay"></i>Clay</button>
+                <button data-surface="grass"><i class="sw sw-grass"></i>Grass</button>
+                <button data-surface="hard"><i class="sw sw-hard"></i>Hard</button>
+              </div>
+            </div>
+            <div class="mn-row" id="row-venues"><span class="mn-label">Venue</span>
+              <div class="menu-levels menu-venues" id="menu-venues" aria-label="Venue">
+                <button data-venue="stadium" class="on">Stadium</button>
+                <button data-venue="club">Country club</button>
+              </div>
+            </div>
+            <div class="mn-row" id="row-levels"><span class="mn-label">Opponent</span>
+              <div class="menu-levels" id="menu-levels" aria-label="Difficulty">
+                <button data-level="easy">Easy</button>
+                <button data-level="normal" class="on">Normal</button>
+                <button data-level="hard">Hard</button>
+              </div>
+            </div>
+            <div class="mn-row" id="row-length"><span class="mn-label">Length</span>
+              <div class="menu-levels" id="menu-length" aria-label="Match length">
+                <button data-len="3">Short<small>First to 3</small></button>
+                <button data-len="6" class="on">Standard<small>First to 6</small></button>
+              </div>
+            </div>
+          </section>
+          <aside class="mn-side" aria-label="Your player">
+            <div class="mn-label">Your player</div>
+            <div class="mn-player">
+              <div class="mn-avatar" id="mn-avatar" aria-hidden="true"><span></span></div>
+              <div class="mn-pinfo"><b id="mn-pname"></b><small id="mn-pbuild"></small></div>
+              <button id="customise" type="button">Customise</button>
+            </div>
+            <button id="play">Play</button>
+            <button id="abandon" type="button" class="hidden">Abandon tournament</button>
+            <div class="menu-foot" id="menu-foot">First to 6 games, win by 2</div>
+            <div class="mn-links">
+              <button id="howto-open" type="button" class="text-link">How to play</button>
+              <button id="about-open" type="button" class="text-link">About</button>
+            </div>
+          </aside>
         </div>
-        <div class="menu-levels menu-events hidden" id="menu-events" aria-label="Tournament">
-          <button data-event="porto" class="on">Porto Velano<small>Clay</small></button>
-          <button data-event="ashbridge">Ashbridge<small>Grass</small></button>
-          <button data-event="harbour">Harbour City<small>Hard</small></button>
-        </div>
-        <div id="bracket" class="hidden"></div>
-        <div class="menu-levels menu-surfaces" id="menu-surfaces" aria-label="Court surface">
-          <button data-surface="clay" class="on">Clay</button>
-          <button data-surface="grass">Grass</button>
-          <button data-surface="hard">Hard court</button>
-        </div>
-        <div class="menu-levels menu-venues" id="menu-venues" aria-label="Venue">
-          <button data-venue="stadium" class="on">Stadium</button>
-          <button data-venue="club">Country club</button>
-        </div>
-        <div class="menu-levels" id="menu-levels" aria-label="Difficulty">
-          <button data-level="easy">Easy</button>
-          <button data-level="normal" class="on">Normal</button>
-          <button data-level="hard">Hard</button>
-        </div>
-        <div class="menu-levels" id="menu-length" aria-label="Match length">
-          <button data-len="3">Short: first to 3</button>
-          <button data-len="6" class="on">Standard: first to 6</button>
-        </div>
-        <button id="customise" type="button">Customise player</button>
-        <button id="play">Play</button>
-        <button id="abandon" type="button" class="hidden">Abandon tournament</button>
-        <div class="menu-foot" id="menu-foot">First to 6 games, win by 2</div>
-        <div class="menu-love">Made for the love of tennis. Free for everyone, always.</div>
-        <div class="menu-credit"><button id="about-open" type="button" class="text-link">About</button> · Non-commercial. Running: Bandai Namco Research Motion Dataset (CC BY-NC 4.0). Strokes: Tennis-MoCap, Pulgarin-Giraldo et al. (CC BY-SA 3.0). Bodies and kit: MakeHuman (CC0). Calls and commentary: Piper TTS, LibriTTS voices (CC BY 4.0).</div>
+        <div class="menu-credit">Free for everyone, non-commercial. Running: Bandai Namco Research Motion Dataset (CC BY-NC 4.0). Strokes: Tennis-MoCap, Pulgarin-Giraldo et al. (CC BY-SA 3.0). Bodies and kit: MakeHuman (CC0). Calls and commentary: Piper TTS, LibriTTS voices (CC BY 4.0).</div>
       </div>
     </div>
     <script type="module" src="./src/main.js"></script>
