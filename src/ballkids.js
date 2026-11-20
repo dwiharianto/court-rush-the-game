@@ -59,7 +59,8 @@ export function createBallKids(scene, kids, makeBallMesh) {
         if (k.state === 'back' && k.ball) continue;
         // the nearest kid goes; crossing to the other half of the court counts extra
         const d = Math.hypot(k.x - b.sim.x, k.z - b.sim.z) + (Math.sign(k.home[0]) === Math.sign(b.sim.x) ? 0 : 6)
-          + (k.baseline && Math.sign(k.home[1]) !== Math.sign(b.sim.z) ? 30 : 0);
+          + (k.baseline && Math.sign(k.home[1]) !== Math.sign(b.sim.z) ? 30 : 0)
+          + (!k.baseline && Math.sign(k.home[1]) !== Math.sign(b.sim.z) ? 8 : 0); // net kids keep to their half
         if (d < bestD) { bestD = d; best = k; }
       }
       if (best) { best.state = 'run'; best.ball = b; b.kid = best; }

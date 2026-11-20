@@ -876,8 +876,8 @@ async function boot() {
   // the ball kids get the players' bodies and real clothes too, in ball-kid kit, kid-sized
   if (bodiesReady) {
     const { createBodyRig } = await import('./rig.js');
-    const KID_SKIN = [0xe0ac85, 0x8d5a3b, 0xf1c9a5, 0xb98058, 0xd9a37c, 0x5e3b27];
-    const KID_HAIR = [0x2a1d14, 0x5a3a22, 0x1a1512, 0x9a6a3a, 0x2a1d14, 0xd8b56e];
+    const KID_SKIN = [0xe0ac85, 0x8d5a3b, 0xf1c9a5, 0xb98058, 0xd9a37c, 0x5e3b27, 0xb98058, 0xf1c9a5];
+    const KID_HAIR = [0x2a1d14, 0x5a3a22, 0x1a1512, 0x9a6a3a, 0x2a1d14, 0xd8b56e, 0x1a1512, 0x9a6a3a];
     world.upgradeBallKids((i) => {
       const build = i % 2 ? 'female' : 'male';
       try {

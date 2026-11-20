@@ -725,7 +725,7 @@ test('ball kids fetch dead balls, go round the net, feed the server, and leave b
   const bk = createBallKids(scene, kids, () => new THREE.Mesh());
   bk.setVenue(WALLS.stadium, { x: 9.3, zMin: ARENA.backWallZ + 0.3, zMax: 17 });
   const base = { spin: 'flat', lift: 0, bounces: 2, lastHitter: 0, hitId: 1, inPlay: false, visible: true, y: 0.033, vy: 0, vx: 0, vz: 0 };
-  bk.spawn({ ...base, x: -3, z: -9 }); // far side, left
+  bk.spawn({ ...base, x: -3, z: -2.5 }); // just over the net on the far side, left: the near net kid goes round the post
   bk.spawn({ ...base, x: 0, y: 4, z: 3, vx: 30, vy: 3 }); // over the side boards into the stands
   let crossedAtPost = true, maxDist = 0;
   for (let t = 0; t < 14; t += 1 / 60) {
@@ -735,7 +735,7 @@ test('ball kids fetch dead balls, go round the net, feed the server, and leave b
     if (Math.abs(k.z) < 0.1 && Math.abs(k.x) < 6.6) crossedAtPost = false;
     maxDist = Math.max(maxDist, Math.hypot(k.x + 7.05, k.z - 1.15));
   }
-  assert.ok(maxDist > 9, 'the left kid ran out to the far-side ball');
+  assert.ok(maxDist > 4, 'the left kid ran out to the far-side ball');
   assert.ok(crossedAtPost, 'and went round the net post, not through the net');
   const k = kids[0].fig.object3d.position;
   assert.ok(Math.hypot(k.x + 7.05, k.z - 1.15) < 0.1, 'and came back to the post');
@@ -757,4 +757,23 @@ test('ball kids fetch dead balls, go round the net, feed the server, and leave b
   assert.equal(scene.children.length, 1, 'a ball on its way to the server');
   for (let t = 0; t < 2; t += 1 / 60) bk.update(1 / 60);
   assert.equal(scene.children.length, 0, 'caught by the server');
+});
+
+test('ball kids: a ball in the far half near the net goes to a far-side net kid', async () => {
+  const THREE = await import('three');
+  const { createBallKids } = await import('../src/ballkids.js');
+  const { WALLS, ARENA } = await import('../src/config.js');
+  const scene = new THREE.Scene();
+  const fig = () => { const o = new THREE.Object3D(); const hand = new THREE.Object3D(); o.add(hand); return { object3d: o, leftHand: hand, setPose() {} }; };
+  const spots = [[-7.05, 1.15], [7.05, 1.15], [-7.05, -1.15], [7.05, -1.15]];
+  const kids = spots.map(([x, z]) => ({ fig: fig(), home: [x, z], ry: 0, homePose: {} }));
+  const bk = createBallKids(scene, kids, () => new THREE.Mesh());
+  bk.setVenue(WALLS.stadium, { x: 9.3, zMin: ARENA.backWallZ + 0.3, zMax: 17 });
+  bk.spawn({ spin: 'flat', lift: 0, bounces: 2, lastHitter: 0, hitId: 1, inPlay: false, visible: true, x: 4, y: 0.033, z: -0.2, vx: 0, vy: 0, vz: 0 });
+  const moved = kids.map(() => 0);
+  for (let t = 0; t < 4; t += 1 / 60) {
+    bk.update(1 / 60);
+    kids.forEach((k, i) => { const p = k.fig.object3d.position; moved[i] = Math.max(moved[i], Math.hypot(p.x - k.home[0], p.z - k.home[1])); });
+  }
+  assert.ok(moved[3] > 1 && moved[1] < 0.01, 'the far-side net kid on that side fetched it, not the near one');
 });

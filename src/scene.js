@@ -419,13 +419,14 @@ function buildDressing(scene) {
   place(createFigure({ shirt: 0x1d2b4a, shorts: 0xc9bfa6, trousers: true, longSleeves: true, hair: 0x555555, shoes: 0x222222 }),
     ux - 0.05, seatY + 0.04, 0, faceRight, POSES.seated, false);
 
-  // ball kids (ballkids.js sends them after dead balls): two crouched by the net posts,
-  // and two standing at the back corners at each end, who also feed the server
-  const hairs = [0x2a1d14, 0x6b4a2a, 0x1a1a1a, 0x8a6a4a, 0x2a1d14, 0xc9a66b];
+  // ball kids (ballkids.js sends them after dead balls), the same in each half: two
+  // crouched by the net posts and two standing at the back corners, who also feed the server
+  const hairs = [0x2a1d14, 0x6b4a2a, 0x1a1a1a, 0x8a6a4a, 0x2a1d14, 0xc9a66b, 0x5a3a22, 0x1a1a1a];
   const spots = [
     [-7.05, 1.15, faceRight, 'crouch'], [7.05, 1.15, faceLeft, 'crouch'],
     [-8.6, -18.6, 0.45, 'stand'], [8.6, -18.6, -0.45, 'stand'],
     [-8.6, 17.4, Math.PI - 0.45, 'stand'], [8.6, 17.4, Math.PI + 0.45, 'stand'],
+    [-7.05, -1.15, faceRight, 'crouch'], [7.05, -1.15, faceLeft, 'crouch'],
   ];
   const kids = spots.map(([x, z, ry, rest], i) => {
     const homePose = rest === 'crouch' ? POSES.crouch : POSES.kidStand;
