@@ -1,7 +1,7 @@
 // Game core (state machine and fixed-step update) plus the browser boot.
 // createGame() has no rendering or DOM in it, so tests can run it headless.
 import { AI, AUDIO, BALL, CALLS, CONTACT, COURT, DEFAULT_SURFACE, DIVE, POWER, STAMINA, NAMES, SPIN, SURFACES, PLAYER, RALLY, SERVE, SERVE_ANIM, SHOT, SMASH, SWING, VOLLEY } from './config.js';
-import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet } from './ball.js';
+import { createBall, stepBall, planShot, predictAtPlane, lowerOverNet, copyBall } from './ball.js';
 import { createMatch, awardPoint, fault, serveFromRight, inSingles, inServiceBox, lineMargin, serviceMargin, tiredness } from './rules.js';
 import { createAI } from './ai.js';
 import { createStats, resetStats, loadStats, statRows } from './stats.js';
@@ -1418,6 +1418,37 @@ async function boot() {
     return out;
   }
 
+  // ---- landing marker: where the CPU's shot will bounce, worked out once per shot by
+  // running the same physics ahead (net cords included), shown on the player's side
+  let markerOn = true;
+  try { markerOn = localStorage.getItem('courtRush.marker') !== '0'; } catch { /* storage blocked */ }
+  function setMarker(on) {
+    markerOn = on;
+    hud.setMarker(on);
+    try { localStorage.setItem('courtRush.marker', on ? '1' : '0'); } catch { /* storage blocked */ }
+  }
+  setMarker(markerOn);
+  hud.onMarker(() => setMarker(!markerOn));
+  const ghost = createBall(), ghostEvents = [];
+  let simClock = 0, markerHit = -1, markerAt = null;
+  function predictBounce(b) {
+    copyBall(ghost, b);
+    for (let t = 0; t < 4; t += BALL.fixedDt) {
+      ghostEvents.length = 0;
+      stepBall(ghost, BALL.fixedDt, ghostEvents);
+      const bounce = ghostEvents.find((e) => e.type === 'bounce');
+      if (bounce) return { x: bounce.x, z: bounce.z, at: simClock + t + BALL.fixedDt };
+    }
+    return null;
+  }
+  function updateMarker(dt) {
+    const b = game.ball;
+    const live = markerOn && b.inPlay && b.visible && b.lastHitter === 1 && b.bounces === 0;
+    if (live && markerHit !== b.hitId) { markerHit = b.hitId; markerAt = predictBounce(b); }
+    const show = live && markerAt && markerAt.z > 0; // only balls coming to your side
+    world.setLandingMarker(show ? { x: markerAt.x, z: markerAt.z, remaining: markerAt.at - simClock } : null, dt);
+  }
+
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
@@ -1441,6 +1472,7 @@ async function boot() {
       frameInput.challenge = first && input.consume('challenge');
       frameInput.held = input.held();
       game.step(BALL.fixedDt, frameInput);
+      simClock += BALL.fixedDt;
       first = false;
       acc -= BALL.fixedDt;
     }
@@ -1451,6 +1483,7 @@ async function boot() {
     views[0].update(dt, between(game.players[0], prevP[0], alpha, drawP[0]));
     views[1].update(dt, between(game.players[1], prevP[1], alpha, drawP[1]));
     world.updateBall(between(game.ball, prevBall, alpha, drawBall), dt);
+    updateMarker(dt);
     // clay dust kicked up ahead of a sliding foot
     dustClock += dt;
     for (const p of game.players) {

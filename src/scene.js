@@ -568,6 +568,41 @@ function buildSlideFx(scene) {
   };
 }
 
+// Where the incoming ball will bounce: a ring and a dot on the court, with an outer
+// ring that closes in as the bounce gets near, so it shows timing as well as place.
+function buildLandingMarker(scene) {
+  const group = new THREE.Group();
+  group.visible = false;
+  const mat = (opacity) => new THREE.MeshBasicMaterial({
+    color: 0xd8f23a, transparent: true, opacity, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6,
+  });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.2, 40), mat(0.9));
+  // a thin dark edge keeps it readable on green grass and pale hard courts
+  const edge = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.225, 40), mat(0.35));
+  edge.material.color.set(0x0b0e13);
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.055, 20), mat(0.9));
+  const closing = new THREE.Mesh(new THREE.RingGeometry(0.94, 1, 48), mat(0.6));
+  for (const m of [edge, ring, dot, closing]) { m.rotation.x = -Math.PI / 2; m.renderOrder = 3; group.add(m); }
+  group.position.y = 0.012;
+  scene.add(group);
+  let fade = 0;
+  return {
+    // m: { x, z, remaining } in seconds until the bounce, or null to hide
+    set(m, dt) {
+      fade = m ? Math.min(1, fade + dt * 6) : Math.max(0, fade - dt * 8);
+      group.visible = fade > 0.01;
+      if (!group.visible) return;
+      if (m) group.position.set(m.x, 0.012, m.z);
+      const k = m ? Math.max(0, Math.min(1, m.remaining / 1.2)) : 0;
+      closing.scale.setScalar(0.22 + 0.9 * k);
+      closing.material.opacity = 0.55 * fade * (k > 0 ? 1 : 0);
+      ring.material.opacity = 0.9 * fade;
+      edge.material.opacity = 0.35 * fade;
+      dot.material.opacity = 0.9 * fade;
+    },
+  };
+}
+
 function buildBall(scene) {
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(BALL.visualRadius, 16, 12),
@@ -672,6 +707,7 @@ export function createWorld() {
   let venue = 'stadium';
   const ballView = buildBall(scene);
   const slideFx = buildSlideFx(scene);
+  const landing = buildLandingMarker(scene);
   let marks = SURFACES[DEFAULT_SURFACE].marks;
   buildLights(scene);
 
@@ -754,6 +790,7 @@ export function createWorld() {
     updateBall: ballView.update, addBounceMark: (x, z) => { if (marks) ballView.addMark(x, z); },
     addSlideTrail: (...a) => { if (marks) slideFx.addTrail(...a); },
     slideDust: (...a) => { if (marks) slideFx.puff(...a); },
+    setLandingMarker: (m, dt) => landing.set(m, dt),
     updateFx(dt) {
       slideFx.update(dt);
       if (venue === 'club') club.update(dt);

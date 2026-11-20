@@ -21,6 +21,10 @@ npm run tune     # difficulty report: scripted players against each CPU level
 npm run build    # static build in dist/
 ```
 
+## Landing marker
+
+When the CPU hits, a marker on your side of the court shows exactly where the ball will bounce (worked out with the game's own ball physics, net cords included), and an outer ring closes in as the bounce gets near. It only shows for balls coming to you. Turn it on or off on the pause screen.
+
 ## Courts
 
 Pick Clay, Grass or Hard court on the start screen. Clay is slow with a high bounce and long slides; grass is fast and low, with shorter slides; hard courts sit in between, with short skids and squeaking shoes. Bounces, slides and stops sound different on each.

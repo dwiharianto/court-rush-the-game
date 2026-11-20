@@ -650,3 +650,38 @@ test('career: a whole career from fourteen to retirement, with the story', async
     assert.deepEqual(JSON.parse(JSON.stringify(c)), c, 'a career is plain data');
   }
 });
+
+test('the landing marker predicts exactly where the CPU\'s shots bounce', async () => {
+  const { copyBall: copy, stepBall: step, createBall: make } = await import('../src/ball.js');
+  const ghost = make(), ev = [];
+  const predict = (b) => {
+    copy(ghost, b);
+    for (let t = 0; t < 4; t += BALL.fixedDt) {
+      ev.length = 0;
+      step(ghost, BALL.fixedDt, ev);
+      const e = ev.find((x) => x.type === 'bounce');
+      if (e) return e;
+    }
+    return null;
+  };
+  let pending = null, hit = -1, checked = 0, worst = 0;
+  for (const surface of ['clay', 'grass']) {
+    playPoints(createGame, {
+      difficulty: 'normal', profile: 'solid', seed: 5, points: 40, surface,
+      onStep: (g) => {
+        const b = g.ball;
+        if (b.inPlay && b.lastHitter === 1 && b.bounces === 0 && b.hitId !== hit) { hit = b.hitId; pending = { id: b.hitId, at: predict(b) }; }
+      },
+      onEvent: (e, g) => {
+        if (e.type !== 'bounce' || !pending || g.ball.hitId !== pending.id || g.ball.bounces !== 1) return;
+        assert.ok(pending.at, 'a bounce was predicted');
+        const d = Math.hypot(e.x - pending.at.x, e.z - pending.at.z);
+        worst = Math.max(worst, d);
+        checked++;
+        pending = null;
+      },
+    });
+  }
+  assert.ok(checked > 40, `checked ${checked} bounces`);
+  assert.ok(worst < 0.01, `predictions within 1 cm (worst ${worst.toFixed(4)} m)`);
+});
