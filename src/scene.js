@@ -433,11 +433,14 @@ function buildDressing(scene) {
     return { fig, home: [x, z], ry, homePose, baseline: rest === 'stand' };
   });
 
-  // line judges: three behind the far baseline, and one on each sideline level with
-  // the near service line (the camera cannot see the ones behind the near baseline)
+  // line judges, the same at both ends: three behind each baseline and one on each
+  // sideline in each half, level with the service line
+  const backZ = ARENA.backWallZ + 1.25;
   const judges = [
-    [-4.7, ARENA.backWallZ + 1.25, 0, 0x2a1d14], [1.1, ARENA.backWallZ + 1.25, 0, 0x8a6a4a], [4.7, ARENA.backWallZ + 1.25, 0, 0x1a1a1a],
-    [-8.9, 6.4, faceRight, 0x3a2a1a], [8.9, 6.4, faceLeft, 0x6b4a2a],
+    [-4.7, backZ, 0, 0x2a1d14], [1.1, backZ, 0, 0x8a6a4a], [4.7, backZ, 0, 0x1a1a1a], // far baseline
+    [-4.7, -backZ, Math.PI, 0x4a2a1a], [-1.1, -backZ, Math.PI, 0x1a1a1a], [4.7, -backZ, Math.PI, 0x8a6a4a], // near baseline
+    [-8.9, -6.4, faceRight, 0x5a3a22], [8.9, -6.4, faceLeft, 0x2a1d14], // far half sidelines
+    [-8.9, 6.4, faceRight, 0x3a2a1a], [8.9, 6.4, faceLeft, 0x6b4a2a], // near half sidelines
   ].map(([x, z, ry, hair]) => ({
     fig: place(createFigure({ shirt: 0x1d2b4a, shorts: 0xd8d0bc, trousers: true, hair, shoes: 0xffffff }), x, 0, z, ry, POSES.lineJudge),
     x, z, ry, t: -1, kind: null, arm: 1, pose: makePose(),
@@ -856,8 +859,15 @@ export function createWorld() {
     // a line call: the judge for that line signals. kind 'out' (arm out toward where the
     // ball went) or 'safe' (both arms low in front, palms down: a close ball, good)
     lineCall({ x, z, kind }) {
+      // the judge for that line: past a baseline, that end's baseline judges; wide, the
+      // sideline judge for that half and side; otherwise (a long serve) that end's baseline
       const J = dressing.judges;
-      const j = z < 0 ? J.slice(0, 3).reduce((a, b) => (Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a)) : J[x < 0 ? 3 : 4];
+      const far = z < 0;
+      const nearest = (list) => list.reduce((a, b) => (Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a));
+      let j;
+      if (Math.abs(z) > COURT.halfLength) j = nearest(far ? J.slice(0, 3) : J.slice(3, 6));
+      else if (Math.abs(x) > COURT.singlesHalf) j = J[(far ? 6 : 8) + (x < 0 ? 0 : 1)];
+      else j = nearest(far ? J.slice(0, 3) : J.slice(3, 6));
       // which arm: the one on the ball's side (the figure's left arm is its local +x)
       const lx = Math.cos(j.ry), lz = -Math.sin(j.ry);
       j.arm = (x - j.x) * lx + (z - j.z) * lz >= 0 ? 1 : -1;

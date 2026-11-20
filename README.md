@@ -23,7 +23,7 @@ npm run build    # static build in dist/
 
 ## Line judges
 
-Three line judges behind the far baseline and one on each sideline. When a ball is called out (or a serve a fault), the judge for that line throws an arm straight out toward where the ball went as the call is shouted; on a close ball called good, they give the "safe" sign, both arms low in front, palms down.
+Ten line judges, the same at both ends: three behind each baseline and one on each sideline in each half. Balls past a baseline are called by that end's baseline judges, wide balls by the sideline judge for that half and side. When a ball is called out (or a serve a fault), the judge for that line throws an arm straight out toward where the ball went as the call is shouted; on a close ball called good, they give the "safe" sign, both arms low in front, palms down.
 
 ## Ball kids
 
