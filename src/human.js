@@ -81,6 +81,8 @@ export const POSES = {
     lHip: 0.5, rHip: 0.5, lKnee: 0.55, rKnee: 0.55, lHipZ: 0.14, rHipZ: 0.14,
     torsoX: 0.4, headX: -0.3, lShX: 0.62, rShX: 0.62, lElbow: 0.12, rElbow: 0.12,
   }),
+  // a ball kid at the back of the court: standing straight, hands behind the back
+  kidStand: makePose({ lShX: -0.28, rShX: -0.28, lShZ: 0.06, rShZ: 0.06, lElbow: 1.05, rElbow: 1.05, lHipZ: 0.06, rHipZ: 0.06 }),
   operator: makePose({ lShX: 1.1, rShX: 1.1, lElbow: 0.9, rElbow: 0.9, torsoX: 0.12, lShZ: 0.1, rShZ: 0.1 }),
 };
 

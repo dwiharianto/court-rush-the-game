@@ -713,13 +713,15 @@ test('balls come off the club fences and stadium walls instead of passing throug
   assert.equal(r.walls.length, 0, 'over the side boards');
 });
 
-test('ball kids fetch dead balls, go round the net, and leave balls in the stands alone', async () => {
+test('ball kids fetch dead balls, go round the net, feed the server, and leave balls in the stands alone', async () => {
   const THREE = await import('three');
   const { createBallKids } = await import('../src/ballkids.js');
   const { WALLS, ARENA } = await import('../src/config.js');
   const scene = new THREE.Scene();
   const fig = () => { const o = new THREE.Object3D(); const hand = new THREE.Object3D(); o.add(hand); return { object3d: o, leftHand: hand, setPose() {} }; };
-  const kids = [-1, 1].map((s) => ({ fig: fig(), home: [s * 7.05, 1.15], ry: 0 }));
+  const kids = [-1, 1].map((s) => ({ fig: fig(), home: [s * 7.05, 1.15], ry: 0, homePose: {} }));
+  // and the corner kids at each end
+  for (const [x, z] of [[-8.6, -18.6], [8.6, -18.6], [-8.6, 17.4], [8.6, 17.4]]) kids.push({ fig: fig(), home: [x, z], ry: 0, homePose: {}, baseline: true });
   const bk = createBallKids(scene, kids, () => new THREE.Mesh());
   bk.setVenue(WALLS.stadium, { x: 9.3, zMin: ARENA.backWallZ + 0.3, zMax: 17 });
   const base = { spin: 'flat', lift: 0, bounces: 2, lastHitter: 0, hitId: 1, inPlay: false, visible: true, y: 0.033, vy: 0, vx: 0, vz: 0 };
@@ -740,4 +742,19 @@ test('ball kids fetch dead balls, go round the net, and leave balls in the stand
   assert.equal(scene.children.length, 0, 'the fetched ball is pocketed, the one in the stands is let go');
   const k2 = kids[1].fig.object3d.position;
   assert.ok(Math.hypot(k2.x - 7.05, k2.z - 1.15) < 0.1, 'nobody chased the ball into the stands');
+  // a deep ball in the far right corner goes to the far right corner kid, not a net kid
+  bk.spawn({ ...base, x: 7, z: -17 });
+  let cornerRan = 0, netRan = 0;
+  for (let t = 0; t < 8; t += 1 / 60) {
+    bk.update(1 / 60);
+    const c = kids[3].fig.object3d.position, n = kids[1].fig.object3d.position;
+    cornerRan = Math.max(cornerRan, Math.hypot(c.x - 8.6, c.z + 18.6));
+    netRan = Math.max(netRan, Math.hypot(n.x - 7.05, n.z - 1.15));
+  }
+  assert.ok(cornerRan > 1 && netRan < 0.01, 'the corner kid fetched it');
+  // feeding: the near-end kid on the server's side bounces a ball over, which then disappears
+  assert.ok(bk.feed(2, 12.4));
+  assert.equal(scene.children.length, 1, 'a ball on its way to the server');
+  for (let t = 0; t < 2; t += 1 / 60) bk.update(1 / 60);
+  assert.equal(scene.children.length, 0, 'caught by the server');
 });

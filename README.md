@@ -23,7 +23,7 @@ npm run build    # static build in dist/
 
 ## Ball kids
 
-When a point or a fault ends, the dead ball keeps rolling while the server takes a fresh one. The ball kid on that side runs out (round the net post if the ball is on the other side), crouches, picks it up and runs back to the post with it. Balls that fly into the stadium stands are left to the crowd; at the club every ball stays inside the fences, so every ball gets fetched.
+Six ball kids, built from the same bodies and clothes as the players, in orange and navy: two crouched by the net posts and two standing at the back corners at each end. When a point or a fault ends, the dead ball keeps rolling while the server takes a fresh one; the nearest kid runs out (round the net post if the ball is on the other side of the net), crouches, picks it up and runs back with it. Before each point a corner kid at the server's end bounces the server a ball. Balls that fly into the stadium stands are left to the crowd; at the club every ball stays inside the fences, so every ball gets fetched.
 
 ## Landing marker
 

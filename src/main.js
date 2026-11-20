@@ -871,6 +871,25 @@ async function boot() {
   });
   const views = [createCharacter(look(me)), createCharacter(look(cpu, 0xb3261e))];
   world.scene.add(views[0].object3d, views[1].object3d);
+  // the ball kids get the players' bodies and real clothes too, in ball-kid kit, kid-sized
+  if (bodiesReady) {
+    const { createBodyRig } = await import('./rig.js');
+    const KID_SKIN = [0xe0ac85, 0x8d5a3b, 0xf1c9a5, 0xb98058, 0xd9a37c, 0x5e3b27];
+    const KID_HAIR = [0x2a1d14, 0x5a3a22, 0x1a1512, 0x9a6a3a, 0x2a1d14, 0xd8b56e];
+    world.upgradeBallKids((i) => {
+      const build = i % 2 ? 'female' : 'male';
+      try {
+        const rig = createBodyRig(getBody(build), {
+          skin: KID_SKIN[i], hair: KID_HAIR[i], hairStyle: build === 'female' ? 'long' : 'short', headwear: 'none',
+          shirt: 0xe8792f, shorts: 0x1c2333, shoes: 0xf4f4f4, socks: 0xffffff, wristbands: false,
+          kit: kitReady ? getKit(build) : null,
+        });
+        if (rig.racket) rig.racket.visible = false;
+        rig.object3d.scale.setScalar(0.8);
+        return rig;
+      } catch (err) { console.warn('Ball kid body failed:', err); return null; }
+    });
+  }
   // the spectators: the same bodies, simplified, loaded in the background (blocks until then)
   if (bodiesReady) {
     Promise.all([import('./body.js'), import('./rig.js')])
@@ -1325,6 +1344,8 @@ async function boot() {
           break;
         case 'serveReady':
           showScore();
+          // a ball kid feeds the server a ball for each new point
+          if (e.serveNumber === 1) { const sv = game.players[e.server]; world.feedServer(sv.x, sv.z); }
           if (e.serveNumber === 1) previewPoint();
           break;
         case 'fault':

@@ -29,6 +29,7 @@ function pickPose(u, out) {
 export function createBallKids(scene, kids, makeBallMesh) {
   // kids: [{ fig, home: [x, z], ry }]
   const K = kids.map((k) => ({ ...k, x: k.home[0], z: k.home[1], state: 'home', ball: null, phase: 0, t: 0, pose: makePose(), facing: k.ry }));
+  const feeds = []; // balls on their way from a ball kid to the server
   const balls = []; // { sim, mesh, kid, picked, age }
   const hand = new THREE.Vector3();
   let walls = [];
@@ -56,7 +57,9 @@ export function createBallKids(scene, kids, makeBallMesh) {
       for (const k of K) {
         if (k.state !== 'home' && k.state !== 'back') continue;
         if (k.state === 'back' && k.ball) continue;
-        const d = Math.hypot(k.x - b.sim.x, k.z - b.sim.z) + (Math.sign(k.home[0]) === Math.sign(b.sim.x) ? 0 : 6);
+        // the nearest kid goes; crossing to the other half of the court counts extra
+        const d = Math.hypot(k.x - b.sim.x, k.z - b.sim.z) + (Math.sign(k.home[0]) === Math.sign(b.sim.x) ? 0 : 6)
+          + (k.baseline && Math.sign(k.home[1]) !== Math.sign(b.sim.z) ? 30 : 0);
         if (d < bestD) { bestD = d; best = k; }
       }
       if (best) { best.state = 'run'; best.ball = b; b.kid = best; }
@@ -66,8 +69,9 @@ export function createBallKids(scene, kids, makeBallMesh) {
   // move toward (tx, tz), going round the net post rather than through the net
   function moveTo(k, tx, tz, dt) {
     let wx = tx, wz = tz;
-    if (Math.sign(tz) !== Math.sign(k.z) && Math.abs(k.x) < Math.abs(k.home[0]) - 0.2) { wx = k.home[0]; wz = k.z; }
-    else if (Math.sign(tz) !== Math.sign(k.z)) { wx = k.home[0]; wz = Math.sign(tz) * 0.9; }
+    const postX = Math.sign(k.x || k.home[0]) * 7.05;
+    if (Math.sign(tz) !== Math.sign(k.z) && Math.abs(k.x) < 6.85) { wx = postX; wz = k.z; }
+    else if (Math.sign(tz) !== Math.sign(k.z)) { wx = postX; wz = Math.sign(tz) * 0.9; }
     const dx = wx - k.x, dz = wz - k.z, d = Math.hypot(dx, dz);
     if (d < 0.02) return 0;
     const step = Math.min(d, RUN_SPEED * dt);
@@ -79,7 +83,7 @@ export function createBallKids(scene, kids, makeBallMesh) {
   }
 
   function update(dt) {
-    dt = Math.min(dt, 0.05);
+    dt = Math.min(dt, 0.1);
     for (const b of balls) {
       b.age += dt;
       if (!b.picked) {
@@ -112,8 +116,17 @@ export function createBallKids(scene, kids, makeBallMesh) {
           k.state = 'home';
           k.facing = k.ry;
           if (k.ball) { k.ball.gone = true; k.ball = null; } // into the pocket
-          k.fig.setPose(POSES.crouch);
+          k.fig.setPose(k.homePose);
         }
+      } else if (k.state === 'feed') {
+        // an underarm bounce feed toward the server
+        k.t += dt;
+        const u = Math.min(1, k.t / 0.4);
+        Object.assign(k.pose, k.homePose === POSES.crouch ? POSES.crouch : POSES.stand);
+        k.pose.rShX = -0.5 + 1.6 * Math.sin(u * Math.PI * 0.6);
+        k.pose.rElbow = 0.2;
+        k.fig.setPose(k.pose);
+        if (k.t >= 0.5) { k.state = 'home'; k.facing = k.ry; k.fig.setPose(k.homePose); }
       }
       o.position.set(k.x, 0, k.z);
       // turn smoothly toward where they are going
@@ -126,6 +139,18 @@ export function createBallKids(scene, kids, makeBallMesh) {
         k.ball.mesh.position.copy(hand);
       }
     }
+    // fed balls: out of the kid's hand, one bounce, into the server's hand
+    for (let i = feeds.length - 1; i >= 0; i--) {
+      const f = feeds[i];
+      f.t += dt;
+      const u = Math.min(1, f.t / f.dur);
+      const x = f.x0 + (f.x1 - f.x0) * u, z = f.z0 + (f.z1 - f.z0) * u;
+      // two arcs: down to a bounce at 55%, then up into the hand
+      const y = u < 0.55 ? f.y0 + (0.033 - f.y0) * (u / 0.55) + Math.sin((u / 0.55) * Math.PI) * 0.6
+        : 0.033 + (f.y1 - 0.033) * ((u - 0.55) / 0.45) + Math.sin(((u - 0.55) / 0.45) * Math.PI) * 0.9;
+      f.mesh.position.set(x, y, z);
+      if (u >= 1) { scene.remove(f.mesh); feeds.splice(i, 1); }
+    }
     for (let i = balls.length - 1; i >= 0; i--) {
       if (!balls[i].gone) continue;
       scene.remove(balls[i].mesh);
@@ -134,9 +159,39 @@ export function createBallKids(scene, kids, makeBallMesh) {
     }
   }
 
+  // the baseline kid at the server's end, on the server's side, bounces them a ball
+  function feed(sx, sz) {
+    const k = K.filter((q) => q.baseline && q.state === 'home' && Math.sign(q.home[1]) === Math.sign(sz))
+      .sort((a, b) => Math.abs(a.home[0] - sx) - Math.abs(b.home[0] - sx))[0];
+    if (!k) return false;
+    k.state = 'feed';
+    k.t = 0;
+    k.facing = Math.atan2(sx - k.x, sz - k.z);
+    const mesh = makeBallMesh();
+    scene.add(mesh);
+    feeds.push({ mesh, t: -0.18, dur: 0.85, x0: k.x, z0: k.z, y0: 0.7, x1: sx, z1: sz, y1: 1.0 });
+    return true;
+  }
+
+  // new figures for the kids (the players' bodies, once loaded)
+  function replaceFigures(parent, makeRig) {
+    K.forEach((k, i) => {
+      const fig = makeRig(i);
+      if (!fig) return;
+      parent.remove(k.fig.object3d);
+      k.fig = fig;
+      parent.add(fig.object3d);
+      fig.object3d.position.set(k.x, 0, k.z);
+      fig.object3d.rotation.y = k.facing;
+      fig.setPose(k.state === 'home' ? k.homePose : k.pose);
+    });
+  }
+
   return {
     spawn,
     update,
+    feed,
+    replaceFigures,
     // the venue's walls (dead balls come off them too) and the area a kid may fetch from
     setVenue(w, b) { walls = w; if (b) bounds = b; },
     // clear the court (a new match)
@@ -147,8 +202,10 @@ export function createBallKids(scene, kids, makeBallMesh) {
         k.x = k.home[0]; k.z = k.home[1]; k.state = 'home'; k.ball = null; k.facing = k.ry;
         k.fig.object3d.position.set(k.x, 0, k.z);
         k.fig.object3d.rotation.y = k.ry;
-        k.fig.setPose(POSES.crouch);
+        k.fig.setPose(k.homePose);
       }
+      for (const f of feeds) scene.remove(f.mesh);
+      feeds.length = 0;
     },
   };
 }

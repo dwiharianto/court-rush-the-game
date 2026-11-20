@@ -401,11 +401,18 @@ function buildDressing(scene) {
   place(createFigure({ shirt: 0x1d2b4a, shorts: 0xc9bfa6, trousers: true, longSleeves: true, hair: 0x555555, shoes: 0x222222 }),
     ux - 0.05, seatY + 0.04, 0, faceRight, POSES.seated, false);
 
-  // ball kids crouched just outside each net post (ballkids.js sends them after dead balls)
-  const kids = [-1, 1].map((s) => {
-    const fig = place(createFigure({ shirt: 0xe8792f, shorts: 0x1c2333, scale: 0.8, hair: s < 0 ? 0x2a1d14 : 0x6b4a2a }),
-      s * 7.05, 0, 1.15, s < 0 ? faceRight : faceLeft, POSES.crouch);
-    return { fig, home: [s * 7.05, 1.15], ry: s < 0 ? faceRight : faceLeft };
+  // ball kids (ballkids.js sends them after dead balls): two crouched by the net posts,
+  // and two standing at the back corners at each end, who also feed the server
+  const hairs = [0x2a1d14, 0x6b4a2a, 0x1a1a1a, 0x8a6a4a, 0x2a1d14, 0xc9a66b];
+  const spots = [
+    [-7.05, 1.15, faceRight, 'crouch'], [7.05, 1.15, faceLeft, 'crouch'],
+    [-8.6, -18.6, 0.45, 'stand'], [8.6, -18.6, -0.45, 'stand'],
+    [-8.6, 17.4, Math.PI - 0.45, 'stand'], [8.6, 17.4, Math.PI + 0.45, 'stand'],
+  ];
+  const kids = spots.map(([x, z, ry, rest], i) => {
+    const homePose = rest === 'crouch' ? POSES.crouch : POSES.kidStand;
+    const fig = place(createFigure({ shirt: 0xe8792f, shorts: 0x1c2333, scale: 0.8, hair: hairs[i] }), x, 0, z, ry, homePose);
+    return { fig, home: [x, z], ry, homePose, baseline: rest === 'stand' };
   });
 
   // line judges behind the far baseline
@@ -806,6 +813,10 @@ export function createWorld() {
     setLandingMarker: (m, dt) => landing.set(m, dt),
     // a ball that has just gone dead: it rolls on until a ball kid fetches it
     spawnDeadBall: (state) => ballKids.spawn(state),
+    // a baseline ball kid at the server's end feeds a ball to the server
+    feedServer: (x, z) => ballKids.feed(x, z),
+    // swap the stand-in figures for the players' bodies: makeRig(i) -> a rig
+    upgradeBallKids: (makeRig) => ballKids.replaceFigures(scene, makeRig),
     clearDeadBalls: () => ballKids.reset(),
     updateFx(dt) {
       slideFx.update(dt);
