@@ -21,6 +21,10 @@ npm run tune     # difficulty report: scripted players against each CPU level
 npm run build    # static build in dist/
 ```
 
+## Reactions
+
+Between points the players react. The winner of a point may pump a fist, or crouch and come up with the racket raised and a "come on!" after a break of serve or a long rally; at the end of the match the winner throws both arms up and jumps. The loser of a point they gave away bends over with hands on knees and shakes their head, or drops their head and shoulders; now and then, more often after a double fault, a lost game or a bad run, they slam the racket down onto the court (the umpire gives a racket-abuse warning) and stand with both hands on their head. Losing the match can end in a crouch with the head in the hands. Everything resets, racket back in hand, for the next point.
+
 ## Line judges
 
 Ten line judges, the same at both ends: three behind each baseline and one on each sideline in each half. Balls past a baseline are called by that end's baseline judges, wide balls by the sideline judge for that half and side. When a ball is called out (or a serve a fault), the judge for that line throws an arm straight out toward where the ball went as the call is shouted; on a close ball called good, they give the "safe" sign, both arms low in front, palms down.

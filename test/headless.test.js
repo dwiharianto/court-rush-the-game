@@ -777,3 +777,39 @@ test('ball kids: a ball in the far half near the net goes to a far-side net kid'
   }
   assert.ok(moved[3] > 1 && moved[1] < 0.01, 'the far-side net kid on that side fetched it, not the near one');
 });
+
+test('reactions: every one plays out, and a thrown racket lands on the court and comes back for the next point', async () => {
+  const THREE = await import('three');
+  const { createCharacter, EMOTES } = await import('../src/human.js');
+  // the racket's strings are drawn on a canvas: a stand-in that accepts any drawing call
+  const ctx = new Proxy({}, { get: (t, k) => (k in t ? t[k] : () => ({ addColorStop() {} })), set: (t, k, v) => { t[k] = v; return true; } });
+  globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => ctx }) };
+  const scene = new THREE.Scene();
+  const ch = createCharacter({});
+  scene.add(ch.object3d);
+  const s = { x: 0, z: 12.5, vx: 0, vz: 0, facing: Math.PI, action: 'ready', actionT: 0 };
+  for (const name of Object.keys(EMOTES)) {
+    ch.endEmote();
+    ch.emote(name);
+    assert.equal(ch.emoting, name);
+    for (let t = 0; t < EMOTES[name].dur + 0.2; t += 1 / 60) ch.update(1 / 60, s);
+    assert.equal(ch.emoting, null, `${name} ends by itself`);
+    for (const [k, v] of Object.entries(ch.lastPose)) assert.ok(Number.isFinite(v), `${name}: ${k} is a number`);
+  }
+  // the racket: thrown, lands, stays down until the next point
+  ch.endEmote();
+  let downs = 0;
+  ch.onEmoteEvent((e) => { if (e.type === 'racketDown') downs++; });
+  ch.emote('throw');
+  for (let t = 0; t < 2.5; t += 1 / 60) ch.update(1 / 60, s);
+  const lying = scene.children.find((o) => o !== ch.object3d);
+  assert.ok(lying, 'a racket lies on the court');
+  assert.ok(lying.position.y < 0.1, 'on the ground');
+  assert.equal(downs, 1, 'one clatter as it lands');
+  ch.endEmote();
+  assert.equal(scene.children.length, 1, 'picked up for the next point');
+  // moving off cuts a reaction short
+  ch.emote('arms');
+  ch.update(1 / 60, { ...s, vx: 3 });
+  assert.equal(ch.emoting, null);
+});

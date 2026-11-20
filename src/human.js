@@ -812,6 +812,61 @@ function shapeStroke(p, s) {
   p.lHipZ += Math.max(0, reach) * 0.18; p.rHipZ += Math.max(0, reach) * 0.18;
 }
 
+// ---------------------------------------------------------------- reactions
+// Short animations between points, layered over the standing pose: celebrations,
+// frustration, and the occasional racket thrown to the ground. Each takes the time t
+// since it began and writes into the pose p (already a copy of the standing pose).
+const ease = (u) => { const v = Math.min(1, Math.max(0, u)); return v * v * (3 - 2 * v); };
+const crouch = (p, k) => { p.lHip += 0.35 * k; p.rHip += 0.35 * k; p.lKnee += 0.5 * k; p.rKnee += 0.5 * k; };
+export const EMOTES = {
+  // a fist pump with the free hand, knees bent
+  fist: { dur: 1.4, pose(p, t) {
+    const pump = t < 0.8 ? Math.max(0, Math.sin(t * 15)) : 0;
+    crouch(p, 0.5); p.torsoX = 0.32; p.headX = 0.05;
+    p.lShX = 0.7 + 0.25 * pump; p.lShZ = 0.25; p.lElbow = 2.05 - 0.35 * pump;
+    p.rShX = 0.25; p.rShZ = 0.15; p.rElbow = 0.45;
+  } },
+  // "come on!": a crouch, then up with the racket raised and a clenched fist
+  comeOn: { dur: 2.0, pose(p, t) {
+    const up = ease((t - 0.25) / 0.25);
+    crouch(p, 0.9 - 0.8 * up); p.torsoX = 0.45 - 0.6 * up; p.headX = -0.35 * up;
+    p.rShX = 0.4 + 2.35 * up; p.rShZ = 0.3; p.rElbow = 0.35;
+    p.lShX = 0.9 + 0.3 * up; p.lShZ = 0.55; p.lElbow = 2.15;
+    p.lift = 0.05 * Math.max(0, Math.sin((t - 0.25) * 9)) * (t < 0.6 ? 1 : 0);
+  } },
+  // match won: both arms up, a couple of little jumps
+  arms: { dur: 3.4, pose(p, t) {
+    p.rShX = 2.9; p.lShX = 2.9; p.rShZ = 0.45; p.lShZ = 0.45; p.rElbow = 0.15; p.lElbow = 0.15;
+    p.headX = -0.45; p.torsoX = -0.15;
+    p.lift = t < 1.6 ? 0.13 * Math.max(0, Math.sin(t * 7.5)) : 0;
+  } },
+  // bent over, hands on knees, and a shake of the head
+  knees: { dur: 2.5, pose(p, t) {
+    crouch(p, 0.6); p.torsoX = 0.85; p.headX = 0.15;
+    p.lShX = 0.75; p.rShX = 0.75; p.lShZ = 0.12; p.rShZ = 0.12; p.lElbow = 0.25; p.rElbow = 0.3;
+    p.headY = t > 0.5 && t < 1.9 ? 0.35 * Math.sin((t - 0.5) * 7) : 0;
+  } },
+  // head down, shoulders slumped
+  dejected: { dur: 2.3, pose(p) {
+    crouch(p, 0.2); p.torsoX = 0.5; p.headX = 0.6;
+    p.lShX = 0.12; p.rShX = 0.18; p.lShZ = 0.06; p.rShZ = 0.06; p.lElbow = 0.25; p.rElbow = 0.3;
+  } },
+  // match lost: crouched, head in hands
+  headInHands: { dur: 3.6, pose(p) {
+    crouch(p, 1.2); p.torsoX = 0.8; p.headX = 0.6;
+    p.lShX = 1.75; p.lShZ = -0.05; p.lElbow = 2.45; p.rShX = 1.6; p.rShZ = -0.05; p.rElbow = 2.35;
+  } },
+  // the racket thrown down: wind up, slam, let go, then both hands on the head
+  throw: { dur: 3.0, release: 0.5, pose(p, t) {
+    if (t < 0.35) { const u = ease(t / 0.35); p.rShX = 2.6 * u; p.rElbow = 0.6 * u; p.torsoX = -0.15 * u; p.headX = -0.2 * u; return; }
+    if (t < 0.62) { const u = ease((t - 0.35) / 0.2); p.rShX = 2.6 - 3.0 * u; p.rElbow = 0.6 - 0.5 * u; p.torsoX = -0.15 + 0.75 * u; crouch(p, 0.6 * u); p.headX = 0.3 * u; return; }
+    const u = ease((t - 0.62) / 0.35);
+    crouch(p, 0.6 * (1 - u)); p.torsoX = 0.6 - 0.5 * u; p.headX = 0.3 - 0.45 * u;
+    p.lShX = 2.3 * u; p.lShZ = 0.6 * u; p.lElbow = 2.5 * u; p.rShX = -0.4 + 2.7 * u; p.rShZ = 0.6 * u; p.rElbow = 0.1 + 2.4 * u;
+    p.headY = t > 1.1 && t < 2.3 ? 0.25 * Math.sin((t - 1.1) * 6) : 0;
+  } },
+};
+
 export function createCharacter(options = {}) {
   // a MakeHuman body when one is given (see rig.js), else the code-built figure
   const rig = options.body ? createBodyRig(options.body, options) : createFigure({ racket: true, ...options });
@@ -826,6 +881,10 @@ export function createCharacter(options = {}) {
   let yaw = 0, yawRate = 0;
   let actionBlend = 0;
   let held = null;
+  // the reaction in progress, and a racket thrown to the ground
+  let emote = null, emoteT = 0, onEmoteEvent = null;
+  const emotePose = makePose();
+  let thrown = null;
   let lastFwd = 0, lastSide = 0, accFwd = 0, accSide = 0;
   let wasSliding = false, slideSide = 1, slideLateral = 1;
   let turnedRun = false; // turned around to chase a ball going over or past
@@ -1122,6 +1181,23 @@ export function createCharacter(options = {}) {
       else copyPose(out, loco);
     }
 
+    // a reaction between points, blended over the standing pose; moving off cuts it short
+    if (emote) {
+      emoteT += dt;
+      const E = EMOTES[emote];
+      if (acting || speed > 1.6 || emoteT >= E.dur) emote = null;
+      else {
+        copyPose(emotePose, out);
+        E.pose(emotePose, emoteT);
+        // the free hand leaves the racket and the racket stops aiming
+        emotePose.lGrip = 0; emotePose.lThroat = 0; emotePose.rkW = 0;
+        const env = Math.min(ease(emoteT / 0.18), ease((E.dur - emoteT) / 0.45));
+        blendPose(out, out, emotePose, env);
+        if (E.release && !thrown && emoteT >= E.release) throwRacket(s);
+      }
+    }
+    if (thrown) stepThrown(dt);
+
     // blend into a new action from wherever the body was
     if (acting && (s.action !== prevAction || s.actionT < prevT)) { copyPose(entryFrom, last); entryT = 0; }
     prevAction = s.action; prevT = s.actionT;
@@ -1166,10 +1242,55 @@ export function createCharacter(options = {}) {
     if (rig.updateCloth) rig.updateCloth(dt);
   }
 
+  // The racket leaves the hand: a copy flies from where it was, tumbles to the court
+  // and lies there until the next point, when the real one is back in the hand.
+  function throwRacket(s) {
+    const racket = rig.racket, scene = rig.object3d.parent;
+    if (!racket || !scene) return;
+    racket.updateMatrixWorld(true);
+    const copy = racket.clone();
+    racket.matrixWorld.decompose(copy.position, copy.quaternion, copy.scale);
+    scene.add(copy);
+    racket.visible = false;
+    const face = s.facing + yaw;
+    thrown = {
+      obj: copy, landed: 0,
+      v: new THREE.Vector3(Math.sin(face) * 2.6, -4.5, Math.cos(face) * 2.6),
+      w: new THREE.Vector3(9 + Math.random() * 4, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 4),
+      rest: new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, Math.random() * Math.PI * 2, 0, 'YXZ')),
+    };
+  }
+  const spinQ = new THREE.Quaternion(), spinE = new THREE.Euler();
+  function stepThrown(dt) {
+    const T = thrown, o = T.obj;
+    if (T.landed > 1) { o.quaternion.slerp(T.rest, Math.min(1, dt * 6)); return; }
+    T.v.y -= 9.8 * dt;
+    o.position.addScaledVector(T.v, dt);
+    spinQ.setFromEuler(spinE.set(T.w.x * dt, T.w.y * dt, T.w.z * dt));
+    o.quaternion.multiply(spinQ);
+    if (o.position.y < 0.06 && T.v.y < 0) {
+      o.position.y = 0.06;
+      if (onEmoteEvent && T.landed === 0) onEmoteEvent({ type: 'racketDown', x: o.position.x, z: o.position.z, speed: -T.v.y });
+      T.v.y *= -0.32; T.v.x *= 0.55; T.v.z *= 0.55; T.w.multiplyScalar(0.4);
+      T.landed++;
+      if (T.landed > 1) { o.position.y = 0.03; T.v.set(0, 0, 0); }
+    }
+  }
+  function endEmote() {
+    emote = null;
+    if (thrown) { thrown.obj.removeFromParent(); thrown = null; }
+    if (rig.racket) rig.racket.visible = true;
+  }
+
   const headLocal = new THREE.Vector3();
   return {
     object3d: rig.object3d,
     setPose(name) { held = name; },
+    // a reaction between points (EMOTES); endEmote() puts everything back for the next point
+    emote(name) { if (!EMOTES[name]) return; if (thrown) endEmote(); emote = name; emoteT = 0; },
+    endEmote,
+    onEmoteEvent(fn) { onEmoteEvent = fn; },
+    get emoting() { return emote; },
     update,
     splitStep() { splitT = 0; },
     feet, // the foot planner's state (for checks)

@@ -899,10 +899,12 @@ async function boot() {
       .catch((err) => console.warn('Spectator bodies did not load:', err));
   }
   function rebuildView(side, kit) {
+    views[side].endEmote();
     world.scene.remove(views[side].object3d);
     views[side].object3d.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     views[side] = createCharacter(kit);
     world.scene.add(views[side].object3d);
+    hookView(side);
     window.courtRush && (window.courtRush.views = views);
   }
   const nameOf = (side) => (side === 0 ? me.name : cpu.name);
@@ -1171,6 +1173,52 @@ async function boot() {
     }
   }
 
+  // ---- reactions between points: celebrations, frustration, the odd racket thrown down
+  const lostRun = [0, 0];
+  let reactTimer = 0;
+  function hookView(side) {
+    views[side].onEmoteEvent((ev) => {
+      if (ev.type !== 'racketDown') return;
+      audio.play('clatter', { x: ev.x, z: ev.z, speed: ev.speed });
+      react('applause', 0.05);
+      // the umpire has a word
+      setTimeout(() => { if (game.state === 'pointOver') hud.showMessage('CODE VIOLATION', `RACKET ABUSE, WARNING, ${shortName(side)}`, 1.8); }, 900);
+    });
+  }
+  hookView(0); hookView(1);
+  function reactToPoint(e) {
+    const w = e.winner, l = 1 - w;
+    lostRun[l]++; lostRun[w] = 0;
+    if (game.match.over) {
+      views[w].emote('arms');
+      views[l].emote(Math.random() < 0.25 ? 'throw' : 'headInHands');
+      return;
+    }
+    // who gave the point away: the hitter of a ball out or into the net, the server of a double fault
+    const erred = e.reason === 'out' || e.reason === 'net' ? e.hitter : e.reason === 'doubleFault' ? e.server : -1;
+    const big = e.game || e.rallyHits >= 9;
+    const breakOfServe = e.game && e.server === l;
+    let we = null, le = null;
+    if (breakOfServe || (e.set && e.game)) we = 'comeOn';
+    else if (big) we = Math.random() < 0.6 ? 'fist' : 'comeOn';
+    else if (erred === -1) we = Math.random() < 0.45 ? 'fist' : null; // a clean winner or an ace
+    else we = Math.random() < 0.15 ? 'fist' : null;
+    if (erred === l) {
+      // throwing the racket is rare, likelier on a double fault, a lost game or a bad run
+      let pThrow = (e.reason === 'doubleFault' ? 0.08 : 0.02) + (e.game ? 0.07 : 0) + (lostRun[l] >= 4 ? 0.06 : 0);
+      if (l === 0) pThrow *= 0.6; // your player keeps a slightly cooler head
+      const r = Math.random();
+      le = r < pThrow ? 'throw' : r < 0.5 ? 'knees' : r < 0.7 ? 'dejected' : null;
+    } else if (big) le = Math.random() < 0.5 ? 'dejected' : 'knees';
+    else le = Math.random() < 0.2 ? 'knees' : null;
+    clearTimeout(reactTimer);
+    reactTimer = setTimeout(() => {
+      if (game.state !== 'pointOver') return;
+      if (we) views[w].emote(we);
+      if (le) views[l].emote(le);
+    }, 350);
+  }
+
   // Players grunt now and then: often on serves, smashes and big forehands, rarely on touch shots.
   function maybeGrunt(e) {
     const C = AUDIO.gruntChance;
@@ -1352,6 +1400,8 @@ async function boot() {
           openPending = true; // the opening, as soon as the voices are ready
           break;
         case 'serveReady':
+          clearTimeout(reactTimer);
+          for (const v of views) v.endEmote(); // racket back in hand for the next point
           showScore();
           // a ball kid feeds the server a ball for each new point
           if (e.serveNumber === 1) { const sv = game.players[e.server]; world.feedServer(sv.x, sv.z); }
@@ -1362,6 +1412,7 @@ async function boot() {
           if (e.reason === 'out') { audio.call('Fault!'); if (lastBounce) world.lineCall({ x: lastBounce.x, z: lastBounce.z, kind: 'out' }); }
           break;
         case 'point': {
+          reactToPoint(e);
           showScore();
           const m = game.match;
           let sub;

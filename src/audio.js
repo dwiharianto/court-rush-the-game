@@ -395,6 +395,20 @@ export function createAudio(options = {}) {
     }
   }
 
+  // A racket thrown onto the court: the frame cracking down, then rattling as it settles.
+  function clatter(opts) {
+    const at = now() + 0.005;
+    const dest = place(opts);
+    const k = AUDIO.levels.net * 1.1;
+    burst(at, { f: 2200, q: 1.2, amp: 0.8 * k, tau: 0.006, dest });
+    burst(at, { type: 'lowpass', f: 700, amp: 0.7 * k, tau: 0.03, dest });
+    mode(at, 520 + rnd() * 80, 0.05, 0.12 * k, dest, 1);
+    for (let i = 0; i < 4; i++) {
+      const t = at + 0.12 + i * (0.07 - i * 0.01);
+      burst(t, { f: 1800 + rnd() * 900, q: 1.6, amp: 0.4 * k * (1 - i * 0.22), tau: 0.005, dest });
+    }
+  }
+
   // Ball clipping the tape: a sharp tick on the band and a short shiver of the mesh.
   function cord(opts) {
     const at = now() + 0.005;
@@ -577,7 +591,7 @@ export function createAudio(options = {}) {
     },
   };
 
-  const SFX = { strike, bounce, net, cord, slide, plant, effort, wall };
+  const SFX = { strike, bounce, net, cord, slide, plant, effort, wall, clatter };
 
   return {
     // Browsers only allow audio after a user gesture, so this runs on Play.
