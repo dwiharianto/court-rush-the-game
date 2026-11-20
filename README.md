@@ -48,6 +48,7 @@ Pick **Career** on the start screen to live a whole career, from a 14-year-old a
 - **Pro (18 to retirement):** the Circuit, the Contender Series, the Tour and the four Crowns, with a world ranking. Retire from 30; at 36 the body decides.
 - **The world:** about 190 invented players who age, improve, peak, decline and retire, and a new generation of juniors every season. Rankings count the last twelve weeks; the rest of each week is simulated.
 - **Story:** your coach Rosa Halvik, a rival from your own age group who follows you all the way, and an agent once you turn pro. Your choices (your ambition, how you treat the rival, how you handle a slump) change what they say later.
+- **Every event looks different:** hard courts in blue, green, purple or teal; day, golden evening or floodlit night sessions; the stadium's walls, stands and banner in the event's colours; the club's windscreen colour and trees that follow the season (blossom early in the year, autumn colours late); and stands that fill up with the size of the event, from a few dozen at a junior club event to packed for a Crown. The four Crowns keep their own signature looks (Porto Velano in terracotta by day, Ashbridge on grass, Harbour City under the floodlights, Meridian Bay at sunset), in Tournament mode too.
 - **Each match:** play it, or simulate it. Opponents play to their rating, so a 14-year-old's first opponents are gentler than Easy and the world's best are tougher than Hard. Opponent strength (Easy, Normal or Hard) and match length are chosen when the career starts.
 - **Saving:** the career saves itself on this device. Export it to a file from the Your career page to keep a backup or move it to another device. Quitting a match counts as a loss.
 
@@ -86,6 +87,7 @@ Customise player, on the start screen, opens a panel with a close-up of your pla
 | `src/career.js` | Career mode logic: the invented world, ageing, calendar, rankings, draws, simulation |
 | `src/story.js` | The career's story: coach, rival and agent, cards and choices |
 | `src/careerui.js` | The career hub screen and story cards |
+| `src/themes.js` | Each event's look: court colours, time of day, venue colours, crowd size |
 | `src/crowd.js` | Spectators: the player bodies baked into crowd poses and drawn instanced |
 | `src/gfx.js` | Small texture and mesh helpers |
 | `src/human.js` | Figure builder and procedural animation behind `setPose` / `update` |

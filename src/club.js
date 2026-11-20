@@ -63,13 +63,19 @@ function buildSky(group) {
   const geo = new THREE.SphereGeometry(125, 32, 16);
   const pos = geo.attributes.position;
   const colors = [];
-  const lo = new THREE.Color(0xe3edf3), hi = new THREE.Color(0x6fa6da), c = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    const k = Math.max(0, pos.getY(i) / 125);
-    c.copy(lo).lerp(hi, Math.pow(k, 0.6));
-    colors.push(c.r, c.g, c.b);
-  }
+  for (let i = 0; i < pos.count; i++) colors.push(0, 0, 0);
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const c = new THREE.Color(), lo = new THREE.Color(), hi = new THREE.Color();
+  const paintSky = (a, b) => {
+    lo.set(a); hi.set(b);
+    const col = geo.attributes.color;
+    for (let i = 0; i < pos.count; i++) {
+      c.copy(lo).lerp(hi, Math.pow(Math.max(0, pos.getY(i) / 125), 0.6));
+      col.setXYZ(i, c.r, c.g, c.b);
+    }
+    col.needsUpdate = true;
+  };
+  paintSky(0xe3edf3, 0x6fa6da);
   const sky = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
   sky.renderOrder = -1;
   group.add(sky);
@@ -100,6 +106,13 @@ function buildSky(group) {
   hg.setAttribute('position', new THREE.Float32BufferAttribute(hv, 3));
   hg.setAttribute('color', new THREE.Float32BufferAttribute(hc, 3));
   group.add(new THREE.Mesh(hg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false })));
+  const paintHills = (a, b) => {
+    near.set(a); far.set(b);
+    const col = hg.attributes.color;
+    for (let i = 0; i < col.count; i++) { const k = i % 6; const v = k === 0 || k === 1 || k === 3 ? near : far; col.setXYZ(i, v.r, v.g, v.b); }
+    col.needsUpdate = true;
+  };
+  return { paintSky, paintHills };
 }
 
 // Trees: instanced trunks and canopies, swaying a little in the wind.
@@ -151,11 +164,18 @@ function buildTrees(group, spots, rnd, clock) {
   const greens = [0x3f6b35, 0x4f7d3a, 0x2f5a32, 0x5d8a40, 0x6b8f3a, 0x46753c, 0x7c9a45];
   const blobMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1),
     sway(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true })), blobs.length);
+  const shades = blobs.map(() => [rnd(), 0.85 + rnd() * 0.3]);
   blobs.forEach(([x, y, z, r], i) => {
     o.position.set(x, y, z); o.scale.set(r, r * 0.85, r); o.rotation.set(rnd(), rnd() * 3, 0); o.updateMatrix();
     blobMesh.setMatrixAt(i, o.matrix);
-    blobMesh.setColorAt(i, col.setHex(greens[Math.floor(rnd() * greens.length)]).multiplyScalar(0.85 + rnd() * 0.3));
+    blobMesh.setColorAt(i, col.setHex(greens[Math.floor(shades[i][0] * greens.length)]).multiplyScalar(shades[i][1]));
   });
+  // the season: blossom among the green in spring, reds, golds and browns in autumn
+  const PALETTES = {
+    summer: greens,
+    spring: [0x5d8a40, 0x6b9a45, 0x7caa50, 0x4f7d3a, 0x6b8f3a, 0xf0b6c8, 0xf6e4ec],
+    autumn: [0xc8742c, 0xd9a03a, 0xa8452a, 0x8a6a2a, 0x6b7a35, 0xb85a2a, 0x4f7d3a],
+  };
   blobMesh.castShadow = true;
   const coneMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 8),
     sway(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true })), Math.max(1, cones.length));
@@ -167,6 +187,13 @@ function buildTrees(group, spots, rnd, clock) {
   coneMesh.count = cones.length;
   coneMesh.castShadow = true;
   group.add(trunkMesh, blobMesh, coneMesh);
+  return {
+    setFoliage(kind) {
+      const pal = PALETTES[kind] || greens;
+      for (let i = 0; i < blobs.length; i++) blobMesh.setColorAt(i, col.setHex(pal[Math.floor(shades[i][0] * pal.length)]).multiplyScalar(shades[i][1]));
+      blobMesh.instanceColor.needsUpdate = true;
+    },
+  };
 }
 
 // a simple walk cycle for the strolling figures
@@ -190,7 +217,7 @@ export function buildClub(parent, { speedBoard, clockBoard } = {}) {
   const clock = []; // per-frame updates
   const X = CLUB.fenceX, ZB = ARENA.backWallZ, ZF = CLUB.fenceZ, H = CLUB.fenceHeight;
 
-  buildSky(group);
+  const sky = buildSky(group);
 
   // lawn
   const lawnTex = grassFloorTexture('#5d8a45');
@@ -260,7 +287,8 @@ export function buildClub(parent, { speedBoard, clockBoard } = {}) {
   const screenMat = new THREE.MeshStandardMaterial({ color: 0x1f4a35, roughness: 0.9 });
   const SH = 1.6;
   for (const s of [-1, 1]) group.add(box(X - 3.6, SH, 0.03, screenMat, s * (X + 3.6) / 2, SH / 2, ZB + 0.05, { cast: false }));
-  const signTex = (name) => boardTexture(name, { bg: '#1f4a35', fg: '#f3efe2', w: 1024, h: 228, sub: 'WILLOWMERE LAWN AND RACQUET CLUB' });
+  let screenBg = '#1f4a35', signName = NAMES.tour;
+  const signTex = (name) => boardTexture(name, { bg: screenBg, fg: '#f3efe2', w: 1024, h: 228, sub: 'WILLOWMERE LAWN AND RACQUET CLUB' });
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(7.2, SH), new THREE.MeshBasicMaterial({ map: signTex(NAMES.tour) }));
   sign.position.set(0, SH / 2, ZB + 0.07);
   group.add(sign);
@@ -556,7 +584,7 @@ export function buildClub(parent, { speedBoard, clockBoard } = {}) {
   }
   // a line of trees along the outside of the side paths
   for (let z = -18; z <= 10; z += 4.5) for (const s of [-1, 1]) spots.push([s * (PATH_X + 3.2 + rnd()), z + rnd() * 1.5, 'round']);
-  buildTrees(group, spots, rnd, clock);
+  const trees = buildTrees(group, spots, rnd, clock);
 
   const crowd = buildCrowd(group, seats, rnd, { idle: true });
 
@@ -571,7 +599,16 @@ export function buildClub(parent, { speedBoard, clockBoard } = {}) {
       for (const f of clock) f(t, dt);
       crowd.update(dt);
     },
+    // the event's look: { light preset, screen, foliage }
+    setTheme(theme, L) {
+      sky.paintSky(L.sky[0], L.sky[1]);
+      sky.paintHills(L.hills[0], L.hills[1]);
+      trees.setFoliage(theme.foliage);
+      screenMat.color.set(theme.screen);
+      if (theme.screen !== screenBg) { screenBg = theme.screen; this.setTourName(signName); }
+    },
     setTourName(name) {
+      signName = name;
       const old = sign.material.map;
       sign.material.map = signTex(name);
       sign.material.needsUpdate = true;

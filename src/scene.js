@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { COURT, ARENA, CLUB, WALLS, CAMERA, RENDER, LIGHT, COLORS, NAMES, BALL, SURFACES, DEFAULT_SURFACE, netHeightAt } from './config.js';
 import { createBallKids } from './ballkids.js';
+import { DEFAULT_THEME, LIGHTS } from './themes.js';
 import { createFigure, POSES, makePose } from './human.js';
 import { canvasTexture, makeRng, noiseTexture, boardTexture, box, grassFloorTexture } from './gfx.js';
 import { buildClub } from './club.js';
@@ -85,9 +86,9 @@ function buildCourt(scene) {
       return { court: grassCourtTexture(SURFACES.grass.court), floor: f, courtRough: 0.95 };
     },
     hard: () => {
-      const c = hardTexture(SURFACES.hard.court, 61);
+      const c = hardTexture(hardColors[0], 61);
       c.repeat.set(3, 6);
-      const f = hardTexture(SURFACES.hard.floor, 62);
+      const f = hardTexture(hardColors[1], 62);
       f.repeat.set(10, 14);
       return { court: c, floor: f, courtRough: 0.8 };
     },
@@ -117,6 +118,8 @@ function buildCourt(scene) {
   addLine(0, 0, lw, COURT.serviceLine * 2); // centre service line
 
   let floorScale = [1, 1], atClub = false, current = null;
+  let hardColors = [SURFACES.hard.court, SURFACES.hard.floor];
+  const surfaceKey = (name) => (name === 'hard' ? `hard:${hardColors.join()}` : name);
   const fitFloor = () => {
     const m = floor.material.map;
     if (!m) return;
@@ -132,9 +135,15 @@ function buildCourt(scene) {
       floor.scale.set(floorScale[0], floorScale[1], 1);
       fitFloor();
     },
+    // the hard court's paint for this event: court and surround colours
+    setHardColors(court, floor) {
+      hardColors = [court, floor];
+      if (current === 'hard') this.setSurface('hard');
+    },
     setSurface(name) {
       if (!looks[name]) return;
-      const t = built[name] || (built[name] = looks[name]());
+      const key = surfaceKey(name);
+      const t = built[key] || (built[key] = looks[name]());
       clay.material.map = t.court;
       clay.material.roughness = t.courtRough;
       clay.material.needsUpdate = true;
@@ -347,12 +356,21 @@ function buildArena(parent) {
 
   const crowd = buildCrowd(scene, seats, rnd);
 
+  let accent = '#0e2a47', bannerName = NAMES.tour;
   return {
     group: scene, crowd, speedMesh: speed.mesh, clockMesh: clock.mesh,
+    // the event's colours: walls, stands and the banner
+    setColors(wall, stand, acc) {
+      wallMat.color.set(wall);
+      standMat.color.set(stand);
+      trimMat.color.set(wall).offsetHSL(0, 0, 0.05);
+      if (acc !== accent) { accent = acc; this.setTourName(bannerName); }
+    },
     // the event name on the banner above the back wall
     setTourName(name) {
+      bannerName = name;
       const old = banner.material.map;
-      banner.material.map = boardTexture(name, { bg: '#0e2a47', fg: '#ffffff', w: 1024, h: 212, sub: 'COURT RUSH WORLD TOUR' });
+      banner.material.map = boardTexture(name, { bg: accent, fg: '#ffffff', w: 1024, h: 212, sub: 'COURT RUSH WORLD TOUR' });
       banner.material.needsUpdate = true;
       if (old) old.dispose();
     },
@@ -689,7 +707,8 @@ function buildBall(scene) {
 }
 
 function buildLights(scene) {
-  scene.add(new THREE.HemisphereLight(LIGHT.hemiSky, LIGHT.hemiGround, LIGHT.hemiIntensity));
+  const hemi = new THREE.HemisphereLight(LIGHT.hemiSky, LIGHT.hemiGround, LIGHT.hemiIntensity);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(LIGHT.sunColor, LIGHT.sunIntensity);
   sun.position.set(...LIGHT.sunPosition);
   sun.target.position.set(0, 0, 0);
@@ -706,6 +725,7 @@ function buildLights(scene) {
   sun.shadow.normalBias = 0.02;
   sun.shadow.radius = 5;
   scene.add(sun, sun.target);
+  return { hemi, sun };
 }
 
 export function createWorld() {
@@ -732,7 +752,8 @@ export function createWorld() {
   const KID_BOUNDS = { stadium: { x: 9.3, zMin: ARENA.backWallZ + 0.3, zMax: 17 }, club: { x: CLUB.fenceX - 0.3, zMin: ARENA.backWallZ + 0.3, zMax: CLUB.fenceZ - 0.3 } };
   ballKids.setVenue(WALLS.stadium, KID_BOUNDS.stadium);
   let marks = SURFACES[DEFAULT_SURFACE].marks;
-  buildLights(scene);
+  const lights = buildLights(scene);
+  let theme = DEFAULT_THEME;
 
   const camera = new THREE.PerspectiveCamera(CAMERA.fov, CAMERA.baseAspect, CAMERA.near, CAMERA.far);
   const target = new THREE.Vector3(...CAMERA.target);
@@ -796,11 +817,28 @@ export function createWorld() {
       club.group.visible = atClub;
       for (const o of dressing.tvPit) o.visible = !atClub;
       ballKids.setVenue(WALLS[venue], KID_BOUNDS[venue]);
-      scene.background = atClub ? null : new THREE.Color(COLORS.background);
+      scene.background = atClub ? null : new THREE.Color(LIGHTS[theme.light].stadiumBg);
       if (atClub) court.setFloorSize(club.fence.x * 2, club.fence.front - club.fence.back, true);
       else court.setFloorSize(ARENA.floorWidth, ARENA.floorLength);
     },
     get venue() { return venue; },
+    // the look of this event (themes.js): court paint, time of day, colours, crowd size
+    setTheme(t = DEFAULT_THEME) {
+      theme = { ...DEFAULT_THEME, ...t };
+      const L = LIGHTS[theme.light] || LIGHTS.day;
+      lights.hemi.color.set(L.hemiSky);
+      lights.hemi.groundColor.set(L.hemiGround);
+      lights.hemi.intensity = L.hemi;
+      lights.sun.color.set(L.sun);
+      lights.sun.intensity = L.sunI;
+      lights.sun.position.set(...L.pos);
+      court.setHardColors(theme.hard, theme.hardFloor);
+      boards.setColors(theme.wall, theme.stand, theme.accent);
+      club.setTheme(theme, L);
+      boards.crowd.setFill(theme.fill);
+      club.crowd.setFill(theme.fill);
+      if (venue !== 'club') scene.background = new THREE.Color(L.stadiumBg);
+    },
     // the spectators react to a point: 0..1
     cheer(i) { (venue === 'club' ? club.crowd : boards.crowd).cheer(i); },
     // the spectators become real bodies once those have loaded: { male, female }, and the rig builder

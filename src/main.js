@@ -7,6 +7,7 @@ import { createAI } from './ai.js';
 import { createStats, resetStats, loadStats, statRows } from './stats.js';
 import { createTournament, nextOpponent, recordResult, levelFor, roundName, bracket, EVENTS } from './tournament.js';
 import { createCareerUI } from './careerui.js';
+import { themeForEvent, DEFAULT_THEME } from './themes.js';
 
 const NO_INPUT = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false };
 const TOSS_VY = Math.sqrt(2 * BALL.gravity * (SERVE.tossApex - SERVE.tossY0));
@@ -978,12 +979,14 @@ async function boot() {
       hud.setFoot(s ? `${s.retired ? 'Retired' : `Age ${s.age}`} · ${s.stage === 'junior' ? 'Junior' : 'World'} ${s.rank ? `#${s.rank}` : 'unranked'} · season ${s.season}, week ${Math.min(s.week, 12)}` : 'From junior to pro');
       hud.setTitle('CAREER', s ? (s.stage === 'junior' ? 'JUNIORS' : 'PRO TOUR') : 'NEW');
       world.setTourName(up ? up.event.name : 'COURT RUSH CAREER');
-      // preview the next court
+      // preview the next court, in that event's look
+      world.setTheme(up ? themeForEvent(up.event) : DEFAULT_THEME);
       showCourt(up ? up.surface : 'clay', up ? up.venue : 'club');
       return;
     }
     hud.setFoot(`First to ${c.length} games, win by 2`);
     showCourt(null, c.venue);
+    world.setTheme(c.mode === 'tournament' ? themeForEvent(EVENTS.find((e) => e.id === (tour && live() ? tour.eventId : c.eventId))) : DEFAULT_THEME);
     if (c.mode !== 'tournament') {
       hud.showBracket(null);
       hud.setTournamentState({ active: false, label: 'Play' });
@@ -1019,7 +1022,7 @@ async function boot() {
     onPlayMatch: (m) => startMatch({
       mode: 'career', level: m.level, surface: m.surface, venue: m.venue, gamesToWin: m.gamesToWin,
       cpu: { ...cpuOpponent(me, seeded(hashName(m.opponent.name))), build: me.build, name: m.opponent.name },
-      title: m.event.name, round: m.round,
+      title: m.event.name, round: m.round, theme: themeForEvent(m.event),
     }),
   });
   hud.onMode(refreshMenu);
@@ -1052,7 +1055,8 @@ async function boot() {
   });
   // the round of the match in play (tournament or career), for the commentary
   let currentRound = null;
-  function startMatch({ mode, difficulty, level, surface, venue, gamesToWin, cpu: next, title, round }) {
+  function startMatch({ mode, difficulty, level, surface, venue, gamesToWin, cpu: next, title, round, theme }) {
+    world.setTheme(theme || (mode === 'tournament' && tour ? themeForEvent(EVENTS.find((e) => e.id === tour.eventId)) : DEFAULT_THEME));
     audio.unlock();
     matchMode = mode;
     currentRound = mode === 'exhibition' ? null : round;

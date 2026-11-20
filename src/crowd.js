@@ -139,6 +139,7 @@ export function buildCrowd(parent, seats, rnd, { idle = false, shirts = SHIRTS }
       phase: rnd() * Math.PI * 2, freq: 4 + rnd() * 2.5,
       keen: 0.4 + rnd() * 0.6, // how readily they get up
       lean: rnd() < 0.3, fidget: rnd() * 100, fidgetRate: 0.03 + rnd() * 0.08,
+      vis: rnd(), // shown when the stands are at least this full
       colors: [skin, pick(shirts), pick(BOTTOMS), bald ? skin : pick(HAIRS), pick(SHOES)]
         .map((c) => col.setHex(c).multiplyScalar(0.8 + rnd() * 0.2).toArray()),
       flags: [rnd() < 0.6 ? 1 : 0, rnd() < 0.2 ? 1 : 0], // trousers, long sleeves
@@ -193,7 +194,7 @@ export function buildCrowd(parent, seats, rnd, { idle = false, shirts = SHIRTS }
     update(0);
   }
 
-  let excite = 0, t = 0, dirty = true, lastKey = '';
+  let excite = 0, t = 0, dirty = true, lastKey = '', fill = 1;
   function poseFor(s) {
     const e = excite * s.keen;
     const beat = Math.floor(t * s.freq + s.phase) % 2;
@@ -217,6 +218,7 @@ export function buildCrowd(parent, seats, rnd, { idle = false, shirts = SHIRTS }
     dirty = false;
     for (const m of Object.values(meshes)) m.k = 0;
     P.forEach((s, i) => {
+      if (s.vis > fill) return; // an empty seat
       const m = meshes[`${s.gender}.${names[i]}`];
       const j = m.k++;
       // a seated spectator who gets up stands on the step in front of the seat
@@ -245,6 +247,8 @@ export function buildCrowd(parent, seats, rnd, { idle = false, shirts = SHIRTS }
     update,
     upgrade,
     cheer(i) { excite = Math.max(excite, Math.min(1, i)); dirty = true; },
+    // how full the stands are, 0..1 of the seats taken
+    setFill(f) { if (f !== fill) { fill = f; dirty = true; lastKey = ''; update(0); } },
     get count() { return n; },
   };
 }
