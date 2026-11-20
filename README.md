@@ -21,6 +21,10 @@ npm run tune     # difficulty report: scripted players against each CPU level
 npm run build    # static build in dist/
 ```
 
+## Line judges
+
+Three line judges behind the far baseline and one on each sideline. When a ball is called out (or a serve a fault), the judge for that line throws an arm straight out toward where the ball went as the call is shouted; on a close ball called good, they give the "safe" sign, both arms low in front, palms down.
+
 ## Ball kids
 
 Six ball kids, built from the same bodies and clothes as the players, in orange and navy: two crouched by the net posts and two standing at the back corners at each end. When a point or a fault ends, the dead ball keeps rolling while the server takes a fresh one; the nearest kid runs out (round the net post if the ball is on the other side of the net), crouches, picks it up and runs back with it. Before each point a corner kid at the server's end bounces the server a ball. Balls that fly into the stadium stands are left to the crowd; at the club every ball stays inside the fences, so every ball gets fetched.

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { COURT, ARENA, CLUB, WALLS, CAMERA, RENDER, LIGHT, COLORS, NAMES, BALL, SURFACES, DEFAULT_SURFACE, netHeightAt } from './config.js';
 import { createBallKids } from './ballkids.js';
-import { createFigure, POSES } from './human.js';
+import { createFigure, POSES, makePose } from './human.js';
 import { canvasTexture, makeRng, noiseTexture, boardTexture, box, grassFloorTexture } from './gfx.js';
 import { buildClub } from './club.js';
 import { buildCrowd, bakeCrowd } from './crowd.js';
@@ -415,11 +415,15 @@ function buildDressing(scene) {
     return { fig, home: [x, z], ry, homePose, baseline: rest === 'stand' };
   });
 
-  // line judges behind the far baseline
-  [[-4.7, 0x2a1d14], [1.1, 0x8a6a4a], [4.7, 0x1a1a1a]].forEach(([x, hair]) => {
-    place(createFigure({ shirt: 0x1d2b4a, shorts: 0xd8d0bc, trousers: true, hair, shoes: 0xffffff }),
-      x, 0, ARENA.backWallZ + 1.25, 0, POSES.lineJudge);
-  });
+  // line judges: three behind the far baseline, and one on each sideline level with
+  // the near service line (the camera cannot see the ones behind the near baseline)
+  const judges = [
+    [-4.7, ARENA.backWallZ + 1.25, 0, 0x2a1d14], [1.1, ARENA.backWallZ + 1.25, 0, 0x8a6a4a], [4.7, ARENA.backWallZ + 1.25, 0, 0x1a1a1a],
+    [-8.9, 6.4, faceRight, 0x3a2a1a], [8.9, 6.4, faceLeft, 0x6b4a2a],
+  ].map(([x, z, ry, hair]) => ({
+    fig: place(createFigure({ shirt: 0x1d2b4a, shorts: 0xd8d0bc, trousers: true, hair, shoes: 0xffffff }), x, 0, z, ry, POSES.lineJudge),
+    x, z, ry, t: -1, kind: null, arm: 1, pose: makePose(),
+  }));
 
   // player benches either side of the umpire chair
   for (const s of [-1, 1]) {
@@ -465,7 +469,7 @@ function buildDressing(scene) {
   scene.add(pit);
   const operator = place(createFigure({ shirt: 0x15171a, shorts: 0x15171a, trousers: true, hair: 0x3a2a1a, shoes: 0x111111 }),
     px, 0, pz - 0.55, 0, POSES.operator);
-  return { tvPit: [pit, operator.object3d], kids };
+  return { tvPit: [pit, operator.object3d], kids, judges };
 }
 
 // ---------------------------------------------------------------- ball
@@ -811,6 +815,17 @@ export function createWorld() {
     addSlideTrail: (...a) => { if (marks) slideFx.addTrail(...a); },
     slideDust: (...a) => { if (marks) slideFx.puff(...a); },
     setLandingMarker: (m, dt) => landing.set(m, dt),
+    // a line call: the judge for that line signals. kind 'out' (arm out toward where the
+    // ball went) or 'safe' (both arms low in front, palms down: a close ball, good)
+    lineCall({ x, z, kind }) {
+      const J = dressing.judges;
+      const j = z < 0 ? J.slice(0, 3).reduce((a, b) => (Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a)) : J[x < 0 ? 3 : 4];
+      // which arm: the one on the ball's side (the figure's left arm is its local +x)
+      const lx = Math.cos(j.ry), lz = -Math.sin(j.ry);
+      j.arm = (x - j.x) * lx + (z - j.z) * lz >= 0 ? 1 : -1;
+      j.kind = kind;
+      j.t = 0;
+    },
     // a ball that has just gone dead: it rolls on until a ball kid fetches it
     spawnDeadBall: (state) => ballKids.spawn(state),
     // a baseline ball kid at the server's end feeds a ball to the server
@@ -820,6 +835,24 @@ export function createWorld() {
     clearDeadBalls: () => ballKids.reset(),
     updateFx(dt) {
       slideFx.update(dt);
+      for (const j of dressing.judges) {
+        if (j.t < 0) continue;
+        j.t += dt;
+        // up quickly, held, then back down
+        const env = j.t < 0.15 ? j.t / 0.15 : j.t < 1.3 ? 1 : Math.max(0, 1 - (j.t - 1.3) / 0.35);
+        Object.assign(j.pose, POSES.lineJudge);
+        if (j.kind === 'out') {
+          const s = j.arm > 0 ? 'l' : 'r';
+          j.pose[`${s}ShZ`] = 0.06 + 1.5 * env; // straight out to the side
+          j.pose[`${s}ShX`] = 0.62 * (1 - env) + 0.15 * env;
+          j.pose[`${s}Elbow`] = 0.12 * (1 - env);
+          j.pose.torsoX = 0.4 - 0.25 * env; // straightening up to call it
+        } else {
+          for (const s of ['l', 'r']) { j.pose[`${s}ShX`] = 0.62 + 0.55 * env; j.pose[`${s}ShY`] = 0.3 * env; j.pose[`${s}Elbow`] = 0.12 * (1 - env); }
+        }
+        j.fig.setPose(j.pose);
+        if (j.t > 1.7) { j.t = -1; j.fig.setPose(POSES.lineJudge); }
+      }
       ballKids.update(dt);
       if (venue === 'club') club.update(dt);
       else boards.crowd.update(dt);

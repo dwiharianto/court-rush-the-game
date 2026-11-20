@@ -575,6 +575,7 @@ export function createGame(options = {}) {
     const near = Math.abs(lm.margin) < CALLS.close;
     let called = truth;
     if (near && rng() < CALLS.missRate * (1 - Math.abs(lm.margin) / CALLS.close)) called = !truth;
+    if (near && called) events.push({ type: 'safe', x: e.x, z: e.z }); // a close ball called good: the line judge's "safe" sign
     // every call can be challenged; only close ones can be wrong
     call = {
       serve, truth, called, near, margin: lm.margin, line: lm.line, x: e.x, z: e.z, hitter: ball.lastHitter,
@@ -1298,6 +1299,9 @@ async function boot() {
         case 'diveLand':
           audio.play('slide', { speed: e.speed + 2, x: e.x, z: e.z });
           break;
+        case 'safe':
+          world.lineCall({ x: e.x, z: e.z, kind: 'safe' });
+          break;
         case 'wall':
           audio.play('wall', { speed: e.v, kind: e.kind, x: e.x, z: e.z });
           break;
@@ -1350,7 +1354,7 @@ async function boot() {
           break;
         case 'fault':
           hud.showMessage('FAULT', 'SECOND SERVE', 1.2);
-          if (e.reason === 'out') audio.call('Fault!');
+          if (e.reason === 'out') { audio.call('Fault!'); if (lastBounce) world.lineCall({ x: lastBounce.x, z: lastBounce.z, kind: 'out' }); }
           break;
         case 'point': {
           showScore();
@@ -1370,6 +1374,7 @@ async function boot() {
           hud.showMessage(REASON[e.reason] || 'POINT', sub, 1.6);
           if (e.reason === 'out') audio.call('Out!');
           else if (e.reason === 'doubleFault' && e.serveReason === 'out') audio.call('Fault!');
+          if ((e.reason === 'out' || (e.reason === 'doubleFault' && e.serveReason === 'out')) && lastBounce) world.lineCall({ x: lastBounce.x, z: lastBounce.z, kind: 'out' });
           if (!e.set) crowdReact(e);
           commentPoint(e);
           break;
