@@ -40,23 +40,32 @@ const CITIES = [
   'VALDORO', 'KINGSFERRY', 'SUNDALE', 'NORRHOLM', 'ALDMOOR', 'BELLACOSTA', 'GREYWATER', 'MARRENFORD',
   'TALVERA', 'ESKBY', 'PORTHALLOW', 'SILVANO',
 ];
-// surface by the week of the season: clay in spring, a short grass swing, hard courts after
-const SURFACE_OF_WEEK = ['clay', 'clay', 'clay', 'clay', 'grass', 'grass', 'grass', 'hard', 'hard', 'hard', 'hard', 'hard'];
-// the tiers on offer each week; the Crowns fall in weeks 3, 6, 8 and 11
-const CROWN_WEEK = { 3: 0, 6: 1, 8: 2, 11: 3 };
+// the season's swings: hard courts to start, then clay, a short grass swing, and hard to finish
+const SURFACE_OF_WEEK = ['hard', 'hard', 'hard', 'clay', 'clay', 'clay', 'grass', 'grass', 'hard', 'hard', 'hard', 'hard'];
+const ROTATE = ['hard', 'clay', 'grass'];
+// the tiers on offer each week; the Crowns fall in weeks 3, 6, 8 and 12 (index: CROWNS)
+const CROWN_WEEK = { 2: 3, 5: 0, 7: 1, 11: 2 };
 const SCHEDULE = {
-  junior: [['jClub'], ['jClub', 'jOpen'], ['jOpen', 'jClub'], ['jCrown', 'jClub'], ['jClub', 'jOpen'], ['jOpen', 'jClub'],
-    ['jCrown', 'jClub'], ['jOpen', 'jClub'], ['jCrown', 'jClub'], ['jClub', 'jOpen'], ['jOpen', 'jClub'], ['jCrown', 'jClub']],
-  pro: [['circuit', 'contender', 'tour'], ['circuit', 'contender'], ['tour', 'contender', 'circuit'], ['crown', 'circuit'],
-    ['circuit', 'contender', 'tour'], ['tour', 'contender', 'circuit'], ['crown', 'circuit'], ['tour', 'contender', 'circuit'],
-    ['crown', 'contender', 'circuit'], ['circuit', 'contender', 'tour'], ['tour', 'contender', 'circuit'], ['crown', 'circuit']],
+  junior: [['jClub'], ['jClub', 'jOpen'], ['jCrown', 'jClub'], ['jOpen', 'jClub'], ['jClub', 'jOpen'], ['jCrown', 'jClub'],
+    ['jOpen', 'jClub'], ['jCrown', 'jClub'], ['jClub', 'jOpen'], ['jOpen', 'jClub'], ['jClub', 'jOpen'], ['jCrown', 'jClub']],
+  pro: [['circuit', 'contender', 'tour'], ['circuit', 'contender', 'tour'], ['crown', 'circuit'], ['tour', 'contender', 'circuit'],
+    ['circuit', 'contender', 'tour'], ['crown', 'circuit'], ['tour', 'contender', 'circuit'], ['crown', 'contender', 'circuit'],
+    ['circuit', 'contender', 'tour'], ['tour', 'contender', 'circuit'], ['circuit', 'contender', 'tour'], ['crown', 'circuit']],
 };
 
 // The events of one week: plain data with a stable id.
 export function weekEvents(stage, season, week) {
+  let others = 0; // events beyond the first that is not a Crown: these go on other surfaces
   return SCHEDULE[stage][week].map((tierId, i) => {
     const T = TIERS[tierId];
-    let name, surface = SURFACE_OF_WEEK[week], venue = T.venue;
+    const swing = SURFACE_OF_WEEK[week];
+    let name, surface = swing, venue = T.venue;
+    if (tierId !== 'crown' && tierId !== 'jCrown') {
+      const n = others++;
+      // the week's swing for the first, then a different court for each of the rest
+      if (n > 0) surface = ROTATE[(ROTATE.indexOf(swing) + n + ((season + week) % 2)) % 3];
+      if (surface === swing && n > 0) surface = ROTATE[(ROTATE.indexOf(swing) + 1) % 3];
+    }
     if (tierId === 'crown' || tierId === 'jCrown') {
       const c = CROWNS[CROWN_WEEK[week]];
       name = tierId === 'crown' ? c.name : `${c.city} JUNIOR CHAMPIONSHIPS`;
