@@ -192,6 +192,7 @@ export function createBallKids(scene, kids, makeBallMesh) {
     spawn,
     update,
     feed,
+    setHidden(on) { for (const b of balls) b.mesh.visible = !on; for (const f of feeds) f.mesh.visible = !on; },
     replaceFigures,
     // the venue's walls (dead balls come off them too) and the area a kid may fetch from
     setVenue(w, b) { walls = w; if (b) bounds = b; },

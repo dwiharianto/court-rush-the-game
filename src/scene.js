@@ -745,6 +745,7 @@ export function createWorld() {
   const ballView = buildBall(scene);
   const slideFx = buildSlideFx(scene);
   const landing = buildLandingMarker(scene);
+  let fxHold = false;
   const deadBallMat = new THREE.MeshStandardMaterial({ color: 0xd9f23c, emissive: 0x8fa81a, emissiveIntensity: 0.55, roughness: 0.7 });
   const deadBallGeo = new THREE.SphereGeometry(BALL.visualRadius, 12, 8);
   const ballKids = createBallKids(scene, dressing.kids, () => {
@@ -773,7 +774,7 @@ export function createWorld() {
     if (aspect < CAMERA.baseAspect) {
       fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(baseHalfH) / aspect));
     }
-    camera.fov = Math.min(CAMERA.maxFov, fov);
+    camera.fov = baseFov = Math.min(CAMERA.maxFov, fov);
     camera.aspect = aspect;
     narrow = width <= 700;
     camera.updateProjectionMatrix();
@@ -782,9 +783,21 @@ export function createWorld() {
   // Showroom: while the player customises, the camera eases in and slowly orbits
   // the near player, framed beside the panel (or above it on a narrow screen).
   let showroom = false, show = 0, orbit = 0.6, narrow = false;
+  // a cutscene's camera: { pos, target, fov } or null for the broadcast camera
+  let cine = null, baseFov = CAMERA.fov;
+  const cineTarget = new THREE.Vector3();
   const bcPos = new THREE.Vector3(), bcTarget = new THREE.Vector3();
   const srPos = new THREE.Vector3(), srTarget = new THREE.Vector3(), side = new THREE.Vector3();
   function updateCamera(dt, playerX = 0, playerZ = 12.5) {
+    if (cine) {
+      camera.position.set(...cine.pos);
+      camera.lookAt(cineTarget.set(...cine.target));
+      // widen a cutscene's view on tall screens, as the broadcast camera does
+      const want = Math.min(CAMERA.maxFov, (cine.fov || 40) * (baseFov / CAMERA.fov));
+      if (Math.abs(camera.fov - want) > 0.01) { camera.fov = want; camera.updateProjectionMatrix(); }
+      return;
+    }
+    if (camera.fov !== baseFov) { camera.fov = baseFov; camera.updateProjectionMatrix(); }
     pan += (playerX - pan) * Math.min(1, dt * CAMERA.panLerp);
     bcPos.set(CAMERA.position[0] + pan * CAMERA.panPosition, CAMERA.position[1], CAMERA.position[2]);
     bcTarget.set(CAMERA.target[0] + pan * CAMERA.panTarget, CAMERA.target[1], CAMERA.target[2]);
@@ -811,6 +824,9 @@ export function createWorld() {
 
   return {
     scene, camera, resize, updateCamera,
+    setCinematic(c) { cine = c; },
+    // hold the ball kids still and out of sight (a replay is showing the point again)
+    setFxHold(on) { fxHold = on; ballKids.setHidden(on); },
     setSpeed: boards.setSpeed, setClock: boards.setClock,
     setTourName(name) { boards.setTourName(name); club.setTourName(name); },
     // 'stadium' or 'club': the show court in its arena, or a country club court outdoors
@@ -902,7 +918,7 @@ export function createWorld() {
         j.fig.setPose(j.pose);
         if (j.t > 1.7) { j.t = -1; j.fig.setPose(POSES.lineJudge); }
       }
-      ballKids.update(dt);
+      if (!fxHold) ballKids.update(dt);
       if (venue === 'club') club.update(dt);
       else boards.crowd.update(dt);
     },

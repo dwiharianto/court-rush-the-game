@@ -856,6 +856,13 @@ export const EMOTES = {
     crouch(p, 1.2); p.torsoX = 0.8; p.headX = 0.6;
     p.lShX = 1.75; p.lShZ = -0.05; p.lElbow = 2.45; p.rShX = 1.6; p.rShZ = -0.05; p.rElbow = 2.35;
   } },
+  // the trophy lifted overhead in both hands, with a little bounce
+  trophy: { dur: 7, pose(p, t) {
+    const up = ease(t / 0.8);
+    p.lShX = 0.4 + 2.35 * up; p.rShX = 0.4 + 2.35 * up; p.lShZ = 0.15 - 0.4 * up; p.rShZ = 0.15 - 0.4 * up;
+    p.lElbow = 0.9 - 0.35 * up; p.rElbow = 0.9 - 0.35 * up; p.headX = -0.4 * up; p.torsoX = -0.1 * up;
+    p.lift = t > 1 && t < 4 ? 0.06 * Math.max(0, Math.sin((t - 1) * 6)) : 0;
+  } },
   // the racket thrown down: wind up, slam, let go, then both hands on the head
   throw: { dur: 3.0, release: 0.5, pose(p, t) {
     if (t < 0.35) { const u = ease(t / 0.35); p.rShX = 2.6 * u; p.rElbow = 0.6 * u; p.torsoX = -0.15 * u; p.headX = -0.2 * u; return; }
@@ -1290,6 +1297,7 @@ export function createCharacter(options = {}) {
     emote(name) { if (!EMOTES[name]) return; if (thrown) endEmote(); emote = name; emoteT = 0; },
     endEmote,
     onEmoteEvent(fn) { onEmoteEvent = fn; },
+    setRacketVisible(v) { if (rig.racket) rig.racket.visible = v; },
     get emoting() { return emote; },
     update,
     splitStep() { splitT = 0; },
