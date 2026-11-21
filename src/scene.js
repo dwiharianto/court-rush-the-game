@@ -858,10 +858,11 @@ export function createWorld() {
       camera.lookAt(cineTarget.set(...cine.target));
       // widen a cutscene's view on tall screens, as the broadcast camera does
       const want = Math.min(CAMERA.maxFov, (cine.fov || 40) * (baseFov / CAMERA.fov));
-      if (Math.abs(camera.fov - want) > 0.01) { camera.fov = want; camera.updateProjectionMatrix(); }
+      // close-ups come within a metre of a face: bring the near plane in so it isn't cut away
+      if (Math.abs(camera.fov - want) > 0.01 || camera.near !== 0.1) { camera.fov = want; camera.near = 0.1; camera.updateProjectionMatrix(); }
       return;
     }
-    if (camera.fov !== baseFov) { camera.fov = baseFov; camera.updateProjectionMatrix(); }
+    if (camera.fov !== baseFov || camera.near !== CAMERA.near) { camera.fov = baseFov; camera.near = CAMERA.near; camera.updateProjectionMatrix(); }
     pan += (playerX - pan) * Math.min(1, dt * CAMERA.panLerp);
     bcPos.set(CAMERA.position[0] + pan * CAMERA.panPosition, CAMERA.position[1], CAMERA.position[2]);
     bcTarget.set(CAMERA.target[0] + pan * CAMERA.panTarget, CAMERA.target[1], CAMERA.target[2]);

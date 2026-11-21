@@ -34,7 +34,8 @@ Third-party data keeps its own licence (full credits in README.md):
 - src/assets/strokes.js: adapted from Tennis-MoCap (Pulgarin-Giraldo et al.),
   CC BY-SA 3.0. This file is shared under the same licence.
 - src/assets/body-*.json, src/assets/crowd-*.json, src/assets/kit/: built from
-  MakeHuman data, CC0 1.0.
+  MakeHuman data (base mesh, skeleton, weights, clothes, hair, skin textures and
+  facial expression units), CC0 1.0.
 - Lighting (image-based): Poly Haven HDRIs (park, sunset, night), CC0 1.0,
   through the @pmndrs/assets npm package (CC0 1.0).
 - src/assets/calls.js, src/assets/commentary.js: speech rendered offline with

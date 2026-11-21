@@ -78,6 +78,9 @@ const KIT_TEXTURES = {
   short: new URL('./assets/kit/textures/hair_short02.png', import.meta.url).href,
   long: new URL('./assets/kit/textures/hair_ponytail01.png', import.meta.url).href,
   curly: new URL('./assets/kit/textures/hair_afro01.png', import.meta.url).href,
+  // skin detail (tools/prepare-skin.py): MakeHuman's young skin, its tone taken out
+  skin_male: new URL('./assets/kit/textures/skin_detail_male.jpg', import.meta.url).href,
+  skin_female: new URL('./assets/kit/textures/skin_detail_female.jpg', import.meta.url).href,
 };
 const kits = {};
 

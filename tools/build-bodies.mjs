@@ -22,20 +22,63 @@ const OUT = join(here, '../src/assets');
 
 // ------------------------------------------------------------------ inputs
 function readObj() {
-  const V = [], faces = { body: [], eyeL: [], eyeR: [] };
+  const V = [], VT = [], faces = { body: [], eyeL: [], eyeR: [] }, faceUV = { body: [], eyeL: [], eyeR: [] };
   let group = '';
   for (const line of readFileSync(join(SRC, 'base.obj'), 'utf8').split('\n')) {
     if (line.startsWith('v ')) V.push(line.split(/\s+/).slice(1, 4).map(Number));
+    else if (line.startsWith('vt ')) VT.push(line.split(/\s+/).slice(1, 3).map(Number));
     else if (line.startsWith('g ')) group = line.slice(2).trim();
     else if (line.startsWith('f ')) {
       const key = group === 'body' ? 'body' : group === 'helper-l-eye' ? 'eyeL' : group === 'helper-r-eye' ? 'eyeR' : null;
       if (!key) continue;
-      const idx = line.split(/\s+/).slice(1).filter(Boolean).map((t) => parseInt(t, 10) - 1);
-      for (let i = 1; i + 1 < idx.length; i++) faces[key].push([idx[0], idx[i], idx[i + 1]]);
+      const corners = line.split(/\s+/).slice(1).filter(Boolean);
+      const idx = corners.map((t) => parseInt(t, 10) - 1);
+      const uvs = corners.map((t) => (t.includes('/') ? parseInt(t.split('/')[1], 10) - 1 : -1));
+      for (let i = 1; i + 1 < idx.length; i++) {
+        faces[key].push([idx[0], idx[i], idx[i + 1]]);
+        faceUV[key].push([uvs[0], uvs[i], uvs[i + 1]]);
+      }
     }
   }
-  return { V, faces };
+  return { V, VT, faces, faceUV };
 }
+
+// MakeHuman's facial expression units (CC0), as morph targets on the base mesh: the
+// three ethnic variants averaged, as the body itself is an even mix of them.
+function readExpressionUnits() {
+  const b = gunzipSync(readFileSync(join(ARA, 'web/targets/expression-units.pack')));
+  const n = b.readUInt32LE(4);
+  const h = JSON.parse(b.subarray(8, 8 + n).toString());
+  const base = 8 + n;
+  const arr = (name) => {
+    const a = h.arrays.find((x) => x.name === name);
+    const T = a.type === 'Uint16Array' ? Uint16Array : Uint8Array;
+    return new T(new Uint8Array(b.subarray(base + a.offset, base + a.offset + a.length * T.BYTES_PER_ELEMENT)).buffer);
+  };
+  const idx = arr('idx'), lo = ['x', 'y', 'z'].map((c) => arr(`${c}lo`)), hi = ['x', 'y', 'z'].map((c) => arr(`${c}hi`));
+  const s16 = (l, h2) => { const v = l | (h2 << 8); return v > 32767 ? v - 65536 : v; };
+  const units = {};
+  for (const [name, [off, count, scale]] of Object.entries(h.meta.targets)) {
+    const unit = name.split('/').pop();
+    const m = units[unit] || (units[unit] = new Map());
+    let v = 0; // vertex indices are stored as steps from the previous one
+    for (let i = off; i < off + count; i++) {
+      v += idx[i];
+      const d = m.get(v) || [0, 0, 0];
+      for (let c = 0; c < 3; c++) d[c] += (s16(lo[c][i], hi[c][i]) * scale) / 3;
+      m.set(v, d);
+    }
+  }
+  return units;
+}
+// the expressions the game uses, as mixes of expression units
+const EXPRESSIONS = {
+  smile: { 'mouth-corner-puller': 1, 'mouth-elevation': 0.15, 'eye-left-slit': 0.3, 'eye-right-slit': 0.3, 'eyebrows-left-extern-up': 0.2, 'eyebrows-right-extern-up': 0.2 },
+  shout: { 'mouth-open': 0.45, 'mouth-retraction': 0.45, 'eyebrows-left-down': 0.4, 'eyebrows-right-down': 0.4, 'nose-compression': 0.4, 'eye-left-slit': 0.35, 'eye-right-slit': 0.35 },
+  grimace: { 'mouth-retraction': 0.8, 'mouth-compression': 0.3, 'eye-left-slit': 0.65, 'eye-right-slit': 0.65, 'eyebrows-left-down': 0.6, 'eyebrows-right-down': 0.6, 'nose-compression': 0.5 },
+  sad: { 'mouth-depression': 0.8, 'eyebrows-left-inner-up': 0.85, 'eyebrows-right-inner-up': 0.85, 'eye-left-slit': 0.2, 'eye-right-slit': 0.2 },
+  blink: { 'eye-left-closure': 1, 'eye-right-closure': 1 },
+};
 
 function readTarget(path) {
   const out = [];
@@ -96,7 +139,7 @@ function partOfBone(n) {
 // shape: weights for the macro targets (see the MakeHuman macro modifier maths:
 // young age, equal ethnic mix, extra muscle and height, ideal proportions).
 function build(gender, { muscle, height, targetHeight }) {
-  const { V: V0, faces } = readObj();
+  const { V: V0, VT, faces, faceUV } = readObj();
   const V = V0.map((v) => v.slice());
   const apply = (path, w) => { for (const [i, x, y, z] of readTarget(path)) { V[i][0] += x * w; V[i][1] += y * w; V[i][2] += z * w; } };
   for (const e of ['african', 'asian', 'caucasian']) apply(`${e}-${gender}-young.target`, 1 / 3);
@@ -113,12 +156,13 @@ function build(gender, { muscle, height, targetHeight }) {
 
   // used vertices: body and eyes; remap to a compact list
   const used = new Map();
-  const tris = [];
+  const tris = [], trisUV = [];
   const eyeVerts = new Set();
   for (const [key, list] of Object.entries(faces)) {
-    for (const t of list) {
+    list.forEach((t, ti) => {
       tris.push(t.map((i) => { if (!used.has(i)) used.set(i, used.size); if (key !== 'body') eyeVerts.add(i); return used.get(i); }));
-    }
+      trisUV.push(faceUV[key][ti]);
+    });
   }
   const order = [...used.keys()];
 
@@ -329,12 +373,55 @@ function build(gender, { muscle, height, targetHeight }) {
   }
   console.log(`${wanted.length} garments fitted to the ${gender} body into ${gdir}`);
 
-  const index = new Uint16Array(tris.flat());
-  const arrays = { position, index, skinIndex, skinWeight, part, along };
+  // texture coordinates: one per vertex; where a vertex sits on a seam of the skin
+  // texture, copies are added after the original vertices, with orig[] pointing back
+  const firstUV = new Int32Array(n).fill(-1);
+  const dupKey = new Map(), dups = []; // [orig vertex, uv]
+  const flat = [];
+  tris.forEach((t, ti) => t.forEach((v, k) => {
+    const u = trisUV[ti][k];
+    if (firstUV[v] < 0 || firstUV[v] === u) { firstUV[v] = u; flat.push(v); return; }
+    const key = v * 65536 + u;
+    if (!dupKey.has(key)) { dupKey.set(key, n + dups.length); dups.push([v, u]); }
+    flat.push(dupKey.get(key));
+  }));
+  const n2 = n + dups.length;
+  const grow = (a, per) => { const o = new a.constructor(n2 * per); o.set(a); dups.forEach(([v], d) => { for (let c = 0; c < per; c++) o[(n + d) * per + c] = a[v * per + c]; }); return o; };
+  const uv = new Float32Array(n2 * 2), orig = new Uint16Array(n2);
+  for (let j = 0; j < n2; j++) {
+    const [v, u] = j < n ? [j, firstUV[j]] : dups[j - n];
+    orig[j] = v;
+    if (u >= 0) { uv[j * 2] = VT[u][0]; uv[j * 2 + 1] = VT[u][1]; }
+  }
+  // expressions, as deltas on the original vertices (the copies follow their originals)
+  const units = readExpressionUnits();
+  const exprNames = Object.keys(EXPRESSIONS), exprCounts = [], exprIdx = [], exprDelta = [];
+  for (const name of exprNames) {
+    const sum = new Map();
+    for (const [unit, w] of Object.entries(EXPRESSIONS[name])) {
+      for (const [bv, d] of units[unit] || []) {
+        if (!used.has(bv)) continue;
+        const j = used.get(bv);
+        const a = sum.get(j) || [0, 0, 0];
+        for (let c = 0; c < 3; c++) a[c] += d[c] * w * s;
+        sum.set(j, a);
+      }
+    }
+    exprCounts.push(sum.size);
+    for (const [j, d] of sum) { exprIdx.push(j); exprDelta.push(...d); }
+  }
+  const index = new Uint16Array(flat);
+  const arrays = {
+    position: grow(position, 3), index, skinIndex: grow(skinIndex, 4), skinWeight: grow(skinWeight, 4),
+    part: grow(part, 1), along: grow(along, 1), uv, orig,
+    exprIdx: new Uint16Array(exprIdx), exprDelta: new Float32Array(exprDelta),
+  };
   const header = {
     format: 'court-rush-body', version: 1, gender, height: targetHeight,
     licence: 'Built from MakeHuman data (hm08 base mesh, default skeleton and weights, macro targets), CC0 1.0, makehumancommunity.org',
     parts: PART, bones, eyes: { l: eyeL, r: eyeR }, frontZ, arrays: {},
+    vertexCount: n, // the original vertices; the rest are texture-seam copies (orig[])
+    expressions: { names: exprNames, counts: exprCounts, source: 'MakeHuman expression units (CC0 1.0), averaged over its three ethnic variants' },
   };
   // JSON: the header plus every array as base64, 4-byte aligned in one blob
   let offset = 0;
@@ -354,7 +441,7 @@ function build(gender, { muscle, height, targetHeight }) {
   writeFileSync(join(OUT, `body-${gender}.json`), out);
   const counts = {};
   for (const p of part) counts[p] = (counts[p] || 0) + 1;
-  console.log(`body-${gender}.json: ${n} vertices, ${tris.length} triangles, ${bones.length} bones, ${(out.length / 1024).toFixed(0)} KB, parts`, counts);
+  console.log(`body-${gender}.json: ${n} vertices (+${n2 - n} seam copies), ${exprNames.length} expressions, ${tris.length} triangles, ${bones.length} bones, ${(out.length / 1024).toFixed(0)} KB, parts`, counts);
 }
 
 // the pieces each build ships with (src/assets/kit): see README for the list

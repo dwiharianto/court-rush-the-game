@@ -874,6 +874,18 @@ export const EMOTES = {
   } },
 };
 
+// the face that goes with each reaction (morph weights by name; t: seconds into it)
+const EMOTE_FACE = {
+  fist: () => ({ shout: 0.7 }),
+  comeOn: (t) => ({ shout: t > 0.2 ? 1 : 0.4, grimace: t > 0.2 ? 0 : 0.5 }),
+  arms: () => ({ smile: 0.75, shout: 0.45 }),
+  trophy: () => ({ smile: 1 }),
+  knees: () => ({ grimace: 0.55, sad: 0.35 }),
+  dejected: () => ({ sad: 1 }),
+  headInHands: () => ({ sad: 1, grimace: 0.25 }),
+  throw: (t) => (t < 0.62 ? { shout: 0.9, grimace: 0.4 } : { grimace: 0.7, sad: 0.45 }),
+};
+
 export function createCharacter(options = {}) {
   // a MakeHuman body when one is given (see rig.js), else the code-built figure
   const rig = options.body ? createBodyRig(options.body, options) : createFigure({ racket: true, ...options });
@@ -890,6 +902,10 @@ export function createCharacter(options = {}) {
   let held = null;
   // the reaction in progress, and a racket thrown to the ground
   let emote = null, emoteT = 0, onEmoteEvent = null;
+  // the face: current expression weights, and the blink clock
+  const face = { smile: 0, shout: 0, grimace: 0, sad: 0, blink: 0 };
+  let blinkIn = 1 + Math.random() * 3, blinkT = 1;
+  let faceOverride = null; // a set face (checks, or a cutscene that wants a particular look)
   const emotePose = makePose();
   let thrown = null;
   let lastFwd = 0, lastSide = 0, accFwd = 0, accSide = 0;
@@ -1205,6 +1221,18 @@ export function createCharacter(options = {}) {
     }
     if (thrown) stepThrown(dt);
 
+    // the face: a blink every few seconds, effort through a stroke, and the reaction's expression
+    if (rig.setExpression) {
+      blinkIn -= dt;
+      if (blinkIn <= 0) { blinkIn = 2 + Math.random() * 4; blinkT = 0; }
+      blinkT += dt;
+      const want = emote ? EMOTE_FACE[emote](emoteT) : acting ? { grimace: s.actionT < 0.5 ? 0.65 : 0.2 } : {};
+      const k = Math.min(1, dt * 10);
+      for (const name of ['smile', 'shout', 'grimace', 'sad']) face[name] += ((want[name] || 0) - face[name]) * k;
+      face.blink = blinkT < 0.15 ? Math.sin((blinkT / 0.15) * Math.PI) : 0;
+      rig.setExpression(faceOverride || face);
+    }
+
     // blend into a new action from wherever the body was
     if (acting && (s.action !== prevAction || s.actionT < prevT)) { copyPose(entryFrom, last); entryT = 0; }
     prevAction = s.action; prevT = s.actionT;
@@ -1298,6 +1326,8 @@ export function createCharacter(options = {}) {
     endEmote,
     onEmoteEvent(fn) { onEmoteEvent = fn; },
     setRacketVisible(v) { if (rig.racket) rig.racket.visible = v; },
+    // hold a face (morph weights by name), or null to let the character's own face run
+    setFace(w) { faceOverride = w; },
     get emoting() { return emote; },
     update,
     splitStep() { splitT = 0; },

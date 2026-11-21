@@ -22,8 +22,12 @@ for (const gender of ['male', 'female']) {
   for (const [name, a] of Object.entries(json.arrays)) {
     A[name] = new T[a.type](bytes.buffer.slice(bytes.byteOffset + a.offset, bytes.byteOffset + a.offset + a.length * T[a.type].BYTES_PER_ELEMENT));
   }
-  const n = A.position.length / 3;
-  const [idx, err] = MeshoptSimplifier.simplify(Uint32Array.from(A.index), A.position, 3, TARGET_TRIS * 3, 0.02);
+  // the original vertices only: the body's texture-seam copies (orig[]) are joined back
+  const n = json.vertexCount || A.position.length / 3;
+  const welded = A.orig ? Uint32Array.from(A.index, (i) => A.orig[i]) : Uint32Array.from(A.index);
+  for (const k of Object.keys(A)) if (!['position', 'skinIndex', 'skinWeight', 'part', 'along'].includes(k)) delete A[k];
+  for (const [k, per] of [['position', 3], ['skinIndex', 4], ['skinWeight', 4], ['part', 1], ['along', 1]]) A[k] = A[k].slice(0, n * per);
+  const [idx, err] = MeshoptSimplifier.simplify(welded, A.position, 3, TARGET_TRIS * 3, 0.02);
   // keep only the vertices still used, renumbered
   const remap = new Int32Array(n).fill(-1);
   let m = 0;
@@ -38,7 +42,7 @@ for (const gender of ['male', 'female']) {
   }
   out.index = Uint16Array.from(idx, (v) => remap[v]);
   // same layout as build-bodies.mjs: the header plus every array as base64
-  const { data, arrays, ...header } = json;
+  const { data, arrays, vertexCount, expressions, ...header } = json;
   header.format = 'court-rush-body';
   header.licence += '; simplified for the crowd with meshoptimizer (MIT)';
   header.arrays = {};
@@ -55,5 +59,5 @@ for (const gender of ['male', 'female']) {
   header.data = blob.toString('base64');
   const file = Buffer.from(JSON.stringify(header));
   writeFileSync(join(ASSETS, `crowd-${gender}.json`), file);
-  console.log(`crowd-${gender}.json: ${m} vertices, ${out.index.length / 3} triangles (from ${A.index.length / 3}), error ${err.toFixed(4)}, ${(file.length / 1024).toFixed(0)} KB`);
+  console.log(`crowd-${gender}.json: ${m} vertices, ${out.index.length / 3} triangles (from ${welded.length / 3}), error ${err.toFixed(4)}, ${(file.length / 1024).toFixed(0)} KB`);
 }

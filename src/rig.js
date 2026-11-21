@@ -19,23 +19,36 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const hex = (c) => new THREE.Color(c);
 
 // ------------------------------------------------------------------ per body, computed once
+// The body has copies of some vertices along the skin texture's seams (orig[] points back
+// to the original). Lighting and smoothing work on the joined mesh, so the seams never show.
+const origOf = (arrays) => arrays.orig || null;
+function weldedIndex(arrays, index = arrays.index) {
+  const o = origOf(arrays);
+  return o ? Uint16Array.from(index, (i) => o[i]) : index;
+}
+function weldedNormals(pos, arrays, index = arrays.index) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(new THREE.BufferAttribute(new Uint16Array(weldedIndex(arrays, index)), 1));
+  g.computeVertexNormals();
+  const nrm = g.getAttribute('normal').array;
+  const o = origOf(arrays);
+  if (o) for (let j = 0; j < o.length; j++) if (o[j] !== j) for (let c = 0; c < 3; c++) nrm[j * 3 + c] = nrm[o[j] * 3 + c];
+  return nrm;
+}
 const prepared = new WeakMap();
 function prepare(body) {
   if (prepared.has(body)) return prepared.get(body);
   const { arrays, bones, parts: P } = body;
   // smooth normals of the rest mesh, used to give clothes and hair some volume
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arrays.position), 3));
-  g.setIndex(new THREE.BufferAttribute(new Uint16Array(arrays.index), 1));
-  g.computeVertexNormals();
-  const normal = g.getAttribute('normal').array;
+  const normal = weldedNormals(new Float32Array(arrays.position), arrays);
 
   // shoes: smooth the feet (the toes merge into one shape) before the kit adds volume
   const shoe = new Float32Array(arrays.position);
   {
     const isFoot = (i) => arrays.part[i] === P.foot;
     const nb = new Map();
-    const idx = arrays.index;
+    const idx = weldedIndex(arrays);
     for (let t = 0; t < idx.length; t += 3) {
       for (let k = 0; k < 3; k++) {
         const a = idx[t + k], b = idx[t + (k + 1) % 3];
@@ -59,6 +72,8 @@ function prepare(body) {
       }
       shoe.set(tmp);
     }
+    const o = origOf(arrays);
+    if (o) for (let j = 0; j < o.length; j++) if (o[j] !== j) for (let c = 0; c < 3; c++) shoe[j * 3 + c] = shoe[o[j] * 3 + c];
   }
 
   const byName = Object.fromEntries(bones.map((b, i) => [b.name, i]));
@@ -128,7 +143,7 @@ const DEFAULT_KIT = {
 };
 const SCALP = { none: 0, buzz: 0.003, short: 0.011, long: 0.013, curly: 0.026 };
 
-function paint(body, prep, o, dressed = false, hairMesh = false) {
+function paint(body, prep, o, dressed = false, hairMesh = false, textured = false) {
   const { arrays, parts: P } = body;
   const n = arrays.part.length;
   const pos = new Float32Array(arrays.position);
@@ -186,6 +201,13 @@ function paint(body, prep, o, dressed = false, hairMesh = false) {
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
     if (hairMesh && part === P.scalp) lift = 0.002;
+    // with the skin detail texture (stored around 0.8), colours step up to match; the
+    // texture has its own lips, so they take the plain skin colour; the eyes have no texture
+    if (textured && part !== P.eye) {
+      if (part === P.lips) c.copy(skin);
+      if (part === P.brows) c.copy(hex(o.hair).lerp(skin, 0.7)); // the texture's shading does the rest
+      col[i * 3] = c.r * 1.25; col[i * 3 + 1] = c.g * 1.25; col[i * 3 + 2] = c.b * 1.25;
+    }
     if (lift) for (let k = 0; k < 3; k++) pos[i * 3 + k] += prep.normal[i * 3 + k] * lift;
   }
   return { pos, col };
@@ -204,32 +226,54 @@ export function createBodyRig(body, options = {}) {
   // under a cap short and curly hair is painted on; a ponytail still shows
   const hairGarment = kit && hairKey && !(o.headwear === 'cap' && hairKey !== 'long') ? kit[hairKey] : null;
   const worn = kit ? [kit.outfit, kit.shoes].filter(Boolean) : [];
-  const { pos, col } = paint(body, prep, o, worn.length > 0, !!hairGarment);
+  // skin detail texture: pores, lips, the flush of the cheeks (MakeHuman, CC0)
+  const skinMap = kit && arrays.uv && kit.textures[`skin_${body.gender}`];
+  const { pos, col } = paint(body, prep, o, worn.length > 0, !!hairGarment, !!skinMap);
   const hidden = new Set();
   for (const g of worn) for (const v of g.arrays.hidden) hidden.add(v);
-  let bodyIndex = arrays.index;
-  if (hidden.size) {
-    const keep = [];
-    for (let t = 0; t < bodyIndex.length; t += 3) {
-      const a = bodyIndex[t], b = bodyIndex[t + 1], c = bodyIndex[t + 2];
-      if (hidden.has(a) || hidden.has(b) || hidden.has(c)) continue; // skin under the clothes
-      keep.push(a, b, c);
-    }
-    bodyIndex = keep;
+  const og = origOf(arrays);
+  const base = (i) => (og ? og[i] : i);
+  // skin under the clothes is left out; the eyes are drawn with their own material
+  const skinTris = [], eyeTris = [];
+  for (let t = 0; t < arrays.index.length; t += 3) {
+    const a = arrays.index[t], b = arrays.index[t + 1], c = arrays.index[t + 2];
+    if (hidden.has(base(a)) || hidden.has(base(b)) || hidden.has(base(c))) continue;
+    (arrays.part[a] === body.parts.eye ? eyeTris : skinTris).push(a, b, c);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  if (arrays.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(arrays.uv), 2));
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(Uint16Array.from(arrays.skinIndex), 4));
   geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(Float32Array.from(arrays.skinWeight, (w) => w / 255), 4));
-  geo.setIndex(new THREE.BufferAttribute(new Uint16Array(bodyIndex), 1));
-  // normals from the whole body, so the edges where clothes begin stay smooth
-  const full = geo.clone();
-  full.setIndex(new THREE.BufferAttribute(new Uint16Array(arrays.index), 1));
-  full.computeVertexNormals();
-  geo.setAttribute('normal', full.getAttribute('normal'));
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 });
-  const mesh = new THREE.SkinnedMesh(geo, mat);
+  geo.setIndex(new THREE.BufferAttribute(new Uint16Array([...skinTris, ...eyeTris]), 1));
+  geo.addGroup(0, skinTris.length, 0);
+  geo.addGroup(skinTris.length, eyeTris.length, 1);
+  // normals from the whole body, joined across the texture seams, so the edges where
+  // clothes begin stay smooth
+  geo.setAttribute('normal', new THREE.BufferAttribute(weldedNormals(pos, arrays), 3));
+  // facial expressions: MakeHuman's expression units mixed into a few faces (see build-bodies.mjs)
+  const E = body.expressions;
+  if (E && arrays.exprIdx) {
+    const nv = pos.length / 3;
+    let k = 0;
+    geo.morphAttributes.position = E.names.map((name, t) => {
+      const a = new Float32Array(nv * 3);
+      for (let e = 0; e < E.counts[t]; e++, k++) a.set(arrays.exprDelta.subarray(k * 3, k * 3 + 3), arrays.exprIdx[k] * 3);
+      if (og) for (let j = 0; j < og.length; j++) if (og[j] !== j) for (let c = 0; c < 3; c++) a[j * 3 + c] = a[og[j] * 3 + c];
+      const attr = new THREE.Float32BufferAttribute(a, 3);
+      attr.name = name;
+      return attr;
+    });
+    geo.morphTargetsRelative = true;
+  }
+  // skin: a soft sheen at grazing angles stands in for light scattering under the skin
+  const mat = skinMap
+    ? new THREE.MeshPhysicalMaterial({ vertexColors: true, map: skinMap, roughness: 0.6, metalness: 0, sheen: 0.35, sheenRoughness: 0.55, sheenColor: new THREE.Color(0xffb090) })
+    : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 });
+  const eyeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15, metalness: 0 });
+  const mesh = new THREE.SkinnedMesh(geo, [mat, eyeMat]);
+  if (geo.morphAttributes.position) mesh.updateMorphTargets();
   mesh.castShadow = true;
   mesh.frustumCulled = false;
 
@@ -291,8 +335,10 @@ export function createBodyRig(body, options = {}) {
       (piece) => (piece === 0 ? sock : shoe));
   }
   if (hairGarment) {
-    garment(hairGarment, new THREE.MeshStandardMaterial({
-      color: hex(o.hair).multiplyScalar(1.6), map: kit.textures[hairKey], alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.65,
+    // hair: a sheen along the strands catches the light
+    garment(hairGarment, new THREE.MeshPhysicalMaterial({
+      color: hex(o.hair).multiplyScalar(1.6), map: kit.textures[hairKey], alphaTest: 0.45, side: THREE.DoubleSide,
+      roughness: 0.55, sheen: 0.6, sheenRoughness: 0.35, sheenColor: hex(o.hair).lerp(new THREE.Color(0xffffff), 0.5),
     }));
   }
   const bone = (n) => bones[byName[n]];
@@ -484,7 +530,13 @@ export function createBodyRig(body, options = {}) {
     if (cloth) cloth.update(dt, object3d, current);
   }
 
-  return { object3d, racket, leftHand, pose: current, setPose, applyGrip, aimRacket, reachRacket, updateCloth, mesh, legs: legInfo };
+  // faces: weights 0..1 by name (smile, shout, grimace, sad, blink)
+  function setExpression(w) {
+    const dict = mesh.morphTargetDictionary, inf = mesh.morphTargetInfluences;
+    if (!dict || !inf) return;
+    for (const [name, i] of Object.entries(dict)) inf[i] = w[name] || 0;
+  }
+  return { object3d, racket, leftHand, pose: current, setPose, applyGrip, aimRacket, reachRacket, updateCloth, mesh, legs: legInfo, setExpression };
 }
 
 // A trainer on each foot: a rounded upper and a sole, sized from the foot itself
