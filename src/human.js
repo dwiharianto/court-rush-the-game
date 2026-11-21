@@ -116,46 +116,136 @@ const ik = {
   m: new THREE.Matrix4(), q: new THREE.Quaternion(), qp: new THREE.Quaternion(),
 };
 
+// A modern racket, made here: a beam swept round the head and down two throat arms
+// (deeper than it is wide, as today's frames are), a gloss finish, a bumper guard over
+// the top, a 16 x 19 string bed with a dampener, and an octagonal handle with an
+// overgrip wound round it and a butt cap. It hangs from the hand along -y, the strings
+// in the xy plane; the head's centre is at headY.
+function sweepBeam(path, closed, halfW, halfD, prof = 14) {
+  const ring = [];
+  for (let k = 0; k < prof; k++) {
+    const a = (k / prof) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+    ring.push([halfW * Math.sign(c) * Math.abs(c) ** 0.55, halfD * Math.sign(s) * Math.abs(s) ** 0.55]); // a rounded box
+  }
+  const n = path.length, pos = [], idx = [];
+  for (let i = 0; i < n; i++) {
+    const a = path[closed ? (i - 1 + n) % n : Math.max(0, i - 1)], b = path[closed ? (i + 1) % n : Math.min(n - 1, i + 1)];
+    let tx = b[0] - a[0], ty = b[1] - a[1];
+    const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+    for (const [w, d] of ring) pos.push(path[i][0] + ty * w, path[i][1] - tx * w, d);
+  }
+  const segs = closed ? n : n - 1;
+  for (let i = 0; i < segs; i++) {
+    const j = (i + 1) % n;
+    for (let k = 0; k < prof; k++) {
+      const k2 = (k + 1) % prof;
+      idx.push(i * prof + k, j * prof + k, i * prof + k2, i * prof + k2, j * prof + k, j * prof + k2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+const RACKET = { headY: -0.445, a: 0.126, b: 0.162, squareness: 0.82, beamW: 0.0068, beamD: 0.0125 };
+const headPoint = (t, grow = 0) => { // t: 0..1 round the head from its top (the tip)
+  const R = RACKET, th = Math.PI * 2 * t, c = Math.sin(th), s = -Math.cos(th), p = R.squareness;
+  return [(R.a + grow) * Math.sign(c) * Math.abs(c) ** p, R.headY + (R.b + grow) * Math.sign(s) * Math.abs(s) ** p];
+};
+let stringTex = null, gripTex = null;
+function racketTextures() {
+  if (stringTex || typeof document === 'undefined') return;
+  // strings: 16 mains and 19 crosses, with a little shading where they weave
+  let c = document.createElement('canvas');
+  c.width = 256; c.height = 320;
+  let g = c.getContext('2d');
+  g.clearRect(0, 0, 256, 320);
+  for (let i = 0; i < 16; i++) { const x = (i + 0.5) * 16; g.fillStyle = 'rgba(238,236,226,1)'; g.fillRect(x - 1.6, 0, 3.2, 320); }
+  for (let j = 0; j < 19; j++) { const y = (j + 0.5) * (320 / 19); g.fillStyle = 'rgba(226,224,214,1)'; g.fillRect(0, y - 1.5, 256, 3); }
+  for (let i = 0; i < 16; i++) for (let j = 0; j < 19; j++) { // a darker knot at each crossing
+    g.fillStyle = (i + j) % 2 ? 'rgba(170,168,160,1)' : 'rgba(205,203,195,1)';
+    g.fillRect((i + 0.5) * 16 - 1.6, (j + 0.5) * (320 / 19) - 1.5, 3.2, 3);
+  }
+  stringTex = new THREE.CanvasTexture(c);
+  stringTex.colorSpace = THREE.SRGBColorSpace;
+  stringTex.anisotropy = 4;
+  // overgrip: a pale wrap wound at an angle, with a thin overlap line
+  c = document.createElement('canvas');
+  c.width = 64; c.height = 256;
+  g = c.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, 64, 256);
+  g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2;
+  for (let y = -64; y < 320; y += 22) { g.beginPath(); g.moveTo(0, y); g.lineTo(64, y + 28); g.stroke(); }
+  for (let i = 0; i < 300; i++) { g.fillStyle = `rgba(0,0,0,${Math.random() * 0.06})`; g.fillRect(Math.random() * 64, Math.random() * 256, 2, 2); }
+  gripTex = new THREE.CanvasTexture(c);
+  gripTex.colorSpace = THREE.SRGBColorSpace;
+  gripTex.wrapS = gripTex.wrapT = THREE.RepeatWrapping;
+}
 export function buildRacket(frameColor, gripColor) {
+  racketTextures();
+  const R = RACKET;
   const g = new THREE.Group();
-  const gripMat = new THREE.MeshStandardMaterial({ color: gripColor, roughness: 0.9 });
-  const frameMat = new THREE.MeshStandardMaterial({ color: frameColor, roughness: 0.35, metalness: 0.2 });
-  const handle = limb(0.2, 0.016, 0.018, gripMat, 8);
-  handle.position.y = 0.05; // hand holds it a little up from the butt
-  g.add(handle);
-  // throat: two struts from the handle to the head
-  for (const s of [-1, 1]) {
-    const strut = limb(0.16, 0.008, 0.008, frameMat, 6);
-    strut.position.set(0, -0.15, 0);
-    strut.rotation.z = s * 0.32;
-    g.add(strut);
+  const frameMat = new THREE.MeshPhysicalMaterial({ color: frameColor, roughness: 0.38, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.18 });
+  const accent = new THREE.Color(frameColor).getHSL({ h: 0, s: 0, l: 0 }).l < 0.25 ? 0xd8f23a : 0x16181c;
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.7 });
+  const add = (geo, mat, shadow = true) => { const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; g.add(m); return m; };
+
+  // the head: one beam all the way round
+  const loop = [];
+  for (let i = 0; i < 96; i++) loop.push(headPoint(i / 96));
+  add(sweepBeam(loop, true, R.beamW, R.beamD), frameMat);
+  // bumper guard over the tip, and a thin accent line along the inside of the frame
+  const bump = [];
+  for (let i = -18; i <= 18; i++) bump.push(headPoint(i / 96, R.beamW + 0.002));
+  add(sweepBeam(bump, false, 0.0024, R.beamD * 0.9, 10), trimMat, false);
+  const line = [];
+  for (let i = 0; i < 96; i++) line.push(headPoint(i / 96, -R.beamW - 0.0004));
+  add(sweepBeam(line, true, 0.0006, R.beamD * 0.35, 8), new THREE.MeshStandardMaterial({ color: accent, roughness: 0.5 }), false);
+
+  // the open throat: two arms from the shaft, curving out to meet the head
+  const shaftTop = -0.2, meet = 0.425; // where on the head the arms join (fraction round from the tip)
+  for (const side of [-1, 1]) {
+    const end = headPoint(side > 0 ? meet : 1 - meet), arm = [];
+    for (let i = 0; i <= 20; i++) {
+      const u = i / 20, v = u * u * (3 - 2 * u);
+      const x = side * 0.008 * (1 - v) + end[0] * Math.pow(v, 1.25);
+      const y = shaftTop + (end[1] - shaftTop) * u;
+      arm.push([x, y]);
+    }
+    add(sweepBeam(arm, false, R.beamW * 0.95, R.beamD * 0.9), frameMat);
   }
-  const headY = -0.445;
-  const frame = new THREE.Mesh(new THREE.TorusGeometry(0.125, 0.011, 8, 28), frameMat);
-  frame.scale.set(1, 1.32, 1);
-  frame.position.y = headY;
-  frame.castShadow = true;
-  g.add(frame);
-  // strings: a grid drawn on a transparent canvas
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const ctx = c.getContext('2d');
-  ctx.strokeStyle = 'rgba(245,245,235,0.95)';
-  ctx.lineWidth = 2;
-  for (let i = 6; i < 128; i += 10) {
-    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 128); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(128, i); ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const strings = new THREE.Mesh(
-    new THREE.CircleGeometry(0.122, 24),
-    new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false }),
-  );
-  strings.scale.set(1, 1.32, 1);
-  strings.position.y = headY;
+  // shaft, from the handle into the throat
+  const shaft = add(new THREE.CylinderGeometry(0.0115, 0.0145, 0.06, 8), frameMat);
+  shaft.position.y = -0.172;
+  shaft.rotation.y = Math.PI / 8;
+
+  // handle: octagonal, the overgrip wound round, a collar where the wrap ends, a butt cap
+  const gripMat = new THREE.MeshStandardMaterial({ color: gripColor, roughness: 0.85, map: gripTex });
+  if (gripTex) { gripMat.map = gripTex.clone(); gripMat.map.needsUpdate = true; gripMat.map.repeat.set(1, 1); }
+  const handle = add(new THREE.CylinderGeometry(0.0158, 0.0162, 0.19, 8), gripMat);
+  handle.position.y = -0.05;
+  handle.rotation.y = Math.PI / 8;
+  const collar = add(new THREE.CylinderGeometry(0.0168, 0.0168, 0.012, 8), trimMat);
+  collar.position.y = -0.146; collar.rotation.y = Math.PI / 8;
+  const cap = add(new THREE.CylinderGeometry(0.0185, 0.0172, 0.014, 8), frameMat);
+  cap.position.y = 0.05; cap.rotation.y = Math.PI / 8;
+
+  // the string bed, inside the frame
+  const shape = new THREE.Shape();
+  for (let i = 0; i <= 96; i++) { const [x, y] = headPoint(i / 96, -R.beamW + 0.001); if (i) shape.lineTo(x, y); else shape.moveTo(x, y); }
+  const bed = new THREE.ShapeGeometry(shape, 48);
+  const uv = bed.attributes.uv, P = bed.attributes.position;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (P.getX(i) + R.a) / (2 * R.a), (P.getY(i) - R.headY + R.b) / (2 * R.b));
+  const strings = new THREE.Mesh(bed, new THREE.MeshStandardMaterial({
+    map: stringTex, alphaTest: 0.5, roughness: 0.55, side: THREE.DoubleSide,
+  }));
   g.add(strings);
-  g.userData.headY = headY;
+  // dampener: a small rubber knot between the two middle mains, near the throat
+  const damp = add(new THREE.BoxGeometry(0.018, 0.012, 0.009), new THREE.MeshStandardMaterial({ color: accent, roughness: 0.6 }), false);
+  damp.position.set(0, R.headY + R.b * 0.84, 0);
+
+  g.userData.headY = R.headY;
   return g;
 }
 

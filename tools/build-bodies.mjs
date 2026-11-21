@@ -373,6 +373,74 @@ function build(gender, { muscle, height, targetHeight }) {
   }
   console.log(`${wanted.length} garments fitted to the ${gender} body into ${gdir}`);
 
+  // ---- modern tennis outfits, put together from MakeHuman pieces (CC0):
+  //   tennis-shorts  the relaxed tee of male_casualsuit06 over shorts cut from its jeans
+  //                  just above the knee (loose, today's length)
+  //   tennis-skirt   the same tee cut sleeveless (a tank), short undershorts, and a
+  //                  pleated skirt made here around the hips
+  // The shorts and skirt take their texture coordinates from a plain patch of the tee,
+  // so the fabric has soft folds and no denim.
+  if (!PREVIEW) {
+    const SUIT = 'male_casualsuit06';
+    const suitItem = catalog.outfits.find((it) => it.id === SUIT);
+    const suit = fitGarment(`outfit_${SUIT}.pack`).arrays;
+    for (const t of [suitItem.material.normal]) if (t) copyFileSync(join(ARA, 'textures', t), join(gdir, 'textures', t));
+    const kneeY = B['lowerleg01.L'].head[1], armX = Math.abs(B['upperarm01.L'].head[0]);
+    const g0 = splitPieces(suit); // [tee, jeans]
+    const tee = g0[0], jeans = g0[1];
+    // a plain patch of the tee (the middle of the back) for the shorts and skirt
+    const patch = (() => {
+      let su = 0, sv = 0, k = 0;
+      for (let i = 0; i < tee.position.length / 3; i++) {
+        const x = tee.position[i * 3], y = tee.position[i * 3 + 1], z = tee.position[i * 3 + 2];
+        if (Math.abs(x) < 0.06 && z < 0 && y > hipY + 0.15 && y < shoulderY - 0.15) { su += tee.uv[i * 2]; sv += tee.uv[i * 2 + 1]; k++; }
+      }
+      return [su / k, sv / k];
+    })();
+    const projectUV = (g) => {
+      for (let i = 0; i < g.position.length / 3; i++) {
+        g.uv[i * 2] = patch[0] + g.position[i * 3] * 0.25;
+        g.uv[i * 2 + 1] = patch[1] + (g.position[i * 3 + 1] - hipY) * 0.25;
+      }
+    };
+    const covered = (keep) => {
+      const out = [];
+      for (const v of suit.hidden) if (keep(position[v * 3], position[v * 3 + 1])) out.push(v);
+      return out;
+    };
+    const teeHem = (() => { let m = Infinity; for (let i = 0; i < tee.position.length / 3; i++) if (Math.abs(tee.position[i * 3]) < armX * 0.8) m = Math.min(m, tee.position[i * 3 + 1]); return m; })();
+    const write = (id, pieces, hidden) => {
+      const g = mergeGarments(pieces);
+      g.hidden = new Uint16Array(hidden);
+      const out = packJson({ format: 'court-rush-garment', id, kind: 'outfit', gender, material: suitItem.material,
+        licence: 'Made from MakeHuman assets (male_casualsuit06, CC0 1.0), makehumancommunity.org; skirt made in tools/build-bodies.mjs' }, g);
+      writeFileSync(join(gdir, `${gender}-${id}.json`), out);
+    };
+    // tee and shorts
+    {
+      const cut = kneeY + 0.075;
+      const shorts = clipGarment(jeans, (p) => p[1] - cut);
+      projectUV(shorts);
+      write('tennis-shorts', [[tee, 0], [shorts, 1]],
+        covered((x, y) => y > cut + 0.02));
+    }
+    // tank, undershorts and pleated skirt
+    {
+      const armCut = armX - 0.025;
+      const tank = clipGarment(tee, (p) => armCut - Math.abs(p[0]));
+      // ball shorts under the skirt, in its colour, ending just above its hem
+      const waistY = Math.min(teeHem + 0.035, hipY + 0.1), hemY = hipY - 0.23;
+      const underCut = hemY + 0.05;
+      const under = clipGarment(jeans, (p) => p[1] - underCut);
+      projectUV(under);
+      const skirt = makeSkirt({ waistY, hemY, under, body: position, part, P: PART, root: boneIndex.get('root'),
+        thighL: boneIndex.get('upperleg01.L'), thighR: boneIndex.get('upperleg01.R') });
+      projectUV(skirt);
+      write('tennis-skirt', [[tank, 0], [under, 1], [skirt, 2]],
+        covered((x, y) => y > underCut + 0.02 && (y < hipY + 0.15 || Math.abs(x) < armCut - 0.015)));
+    }
+  }
+
   // texture coordinates: one per vertex; where a vertex sits on a seam of the skin
   // texture, copies are added after the original vertices, with orig[] pointing back
   const firstUV = new Int32Array(n).fill(-1);
@@ -444,10 +512,136 @@ function build(gender, { muscle, height, targetHeight }) {
   console.log(`body-${gender}.json: ${n} vertices (+${n2 - n} seam copies), ${exprNames.length} expressions, ${tris.length} triangles, ${bones.length} bones, ${(out.length / 1024).toFixed(0)} KB, parts`, counts);
 }
 
+
+// ---------------------------------------------------------------- garment pieces
+// A garment's arrays: position, uv, skinIndex/skinWeight (4 per vertex, bytes),
+// index, piece (0 topmost shell), hidden (body vertices it covers).
+function splitPieces(A) {
+  const out = [[], []];
+  for (let t = 0; t < A.index.length; t += 3) out[A.piece[A.index[t]] === 0 ? 0 : 1].push(A.index[t], A.index[t + 1], A.index[t + 2]);
+  return out.map((tri) => subset(A, tri));
+}
+// the vertices a triangle list uses, renumbered
+function subset(A, tri) {
+  const map = new Map(), ids = [];
+  const index = tri.map((v) => { if (!map.has(v)) { map.set(v, ids.length); ids.push(v); } return map.get(v); });
+  const pick = (a, per) => { const o = new a.constructor(ids.length * per); ids.forEach((v, i) => { for (let c = 0; c < per; c++) o[i * per + c] = a[v * per + c]; }); return o; };
+  return { position: pick(A.position, 3), uv: pick(A.uv, 2), skinIndex: pick(A.skinIndex, 4), skinWeight: pick(A.skinWeight, 4), index: Uint32Array.from(index) };
+}
+// keep the part where f(position) >= 0, cutting triangles cleanly along f = 0 (f is
+// linear along each edge, so the new hem is straight)
+function clipGarment(A, f) {
+  const pos = Array.from(A.position), uv = Array.from(A.uv), si = Array.from(A.skinIndex), sw = Array.from(A.skinWeight);
+  const n0 = A.position.length / 3;
+  const val = [];
+  for (let i = 0; i < n0; i++) val.push(f([pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]]));
+  const edge = new Map();
+  const cutAt = (a, b) => {
+    const key = a < b ? `${a},${b}` : `${b},${a}`;
+    if (edge.has(key)) return edge.get(key);
+    const t = val[a] / (val[a] - val[b]);
+    const id = pos.length / 3;
+    for (let c = 0; c < 3; c++) pos.push(pos[a * 3 + c] + (pos[b * 3 + c] - pos[a * 3 + c]) * t);
+    for (let c = 0; c < 2; c++) uv.push(uv[a * 2 + c] + (uv[b * 2 + c] - uv[a * 2 + c]) * t);
+    const src = t < 0.5 ? a : b;
+    for (let c = 0; c < 4; c++) { si.push(si[src * 4 + c]); sw.push(sw[src * 4 + c]); }
+    val.push(0);
+    edge.set(key, id);
+    return id;
+  };
+  const tri = [];
+  for (let t = 0; t < A.index.length; t += 3) {
+    const v = [A.index[t], A.index[t + 1], A.index[t + 2]];
+    const inside = v.map((i) => val[i] >= 0);
+    if (inside.every(Boolean)) { tri.push(...v); continue; }
+    if (!inside.some(Boolean)) continue;
+    const poly = [];
+    for (let k = 0; k < 3; k++) {
+      const a = v[k], b = v[(k + 1) % 3];
+      if (val[a] >= 0) poly.push(a);
+      if ((val[a] >= 0) !== (val[b] >= 0)) poly.push(cutAt(a, b));
+    }
+    for (let k = 1; k + 1 < poly.length; k++) tri.push(poly[0], poly[k], poly[k + 1]);
+  }
+  const full = { position: Float32Array.from(pos), uv: Float32Array.from(uv), skinIndex: Uint8Array.from(si), skinWeight: Uint8Array.from(sw) };
+  return subset(full, tri);
+}
+// one garment from several, each with its piece number
+function mergeGarments(list) {
+  const nv = list.reduce((a, [g]) => a + g.position.length / 3, 0);
+  const out = { position: new Float32Array(nv * 3), uv: new Float32Array(nv * 2), skinIndex: new Uint8Array(nv * 4), skinWeight: new Uint8Array(nv * 4), piece: new Uint8Array(nv) };
+  const index = [];
+  let at = 0;
+  for (const [g, piece] of list) {
+    const n = g.position.length / 3;
+    out.position.set(g.position, at * 3); out.uv.set(g.uv, at * 2);
+    out.skinIndex.set(g.skinIndex, at * 4); out.skinWeight.set(g.skinWeight, at * 4);
+    out.piece.fill(piece, at, at + n);
+    for (const v of g.index) index.push(v + at);
+    at += n;
+  }
+  out.index = nv > 65535 ? new Uint32Array(index) : new Uint16Array(index);
+  return out;
+}
+// A pleated tennis skirt: rings from the waist to the hem following the outline of the
+// hips and legs (and the undershorts) with a little ease, flaring toward the hem, with
+// sixteen knife pleats that deepen as they fall. The waist moves with the hips; lower
+// down it follows the thighs more and more (the nearer thigh most).
+function makeSkirt({ waistY, hemY, under, body, part, P, root, thighL, thighR }) {
+  const SEG = 128, RINGS = 14, PLEATS = 16;
+  const pts = [];
+  for (let i = 0; i < body.length / 3; i++) {
+    if ([P.upperarm, P.forearm, P.hand].includes(part[i])) continue;
+    pts.push([body[i * 3], body[i * 3 + 1], body[i * 3 + 2]]);
+  }
+  for (let i = 0; i < under.position.length / 3; i++) pts.push([under.position[i * 3], under.position[i * 3 + 1], under.position[i * 3 + 2]]);
+  let cx = 0, cz = 0, cn = 0;
+  for (const p of pts) if (Math.abs(p[1] - waistY) < 0.02) { cx += p[0]; cz += p[2]; cn++; }
+  cx /= cn; cz /= cn;
+  const position = [], skinIndex = [], skinWeight = [], index = [];
+  let prev = null;
+  for (let r = 0; r < RINGS; r++) {
+    const t = r / (RINGS - 1), y = waistY + (hemY - waistY) * t;
+    const rad = new Float32Array(SEG);
+    for (const p of pts) {
+      if (Math.abs(p[1] - y) > 0.02) continue;
+      const a = Math.atan2(p[0] - cx, p[2] - cz);
+      const b = ((Math.round((a / (2 * Math.PI)) * SEG) % SEG) + SEG) % SEG;
+      rad[b] = Math.max(rad[b], Math.hypot(p[0] - cx, p[2] - cz));
+    }
+    // fill gaps, smooth round the ring, never narrower than the ring above
+    for (let k = 0; k < SEG; k++) if (!rad[k]) rad[k] = Math.max(rad[(k + 1) % SEG], rad[(k + SEG - 1) % SEG]);
+    const sm = rad.map((_, k) => { let m = 0; for (let d = -6; d <= 6; d++) m = Math.max(m, rad[(k + d + SEG) % SEG]); return m; });
+    const ring = sm.map((_, k) => { let a = 0; for (let d = -4; d <= 4; d++) a += sm[(k + d + SEG) % SEG]; return a / 9; });
+    if (prev) for (let k = 0; k < SEG; k++) ring[k] = Math.max(ring[k], prev[k]);
+    prev = ring;
+    for (let k = 0; k < SEG; k++) {
+      const a = (k / SEG) * 2 * Math.PI;
+      const saw = ((k * PLEATS) / SEG) % 1; // a knife pleat: a slow rise, then a fold
+      const R = ring[k] + 0.012 + 0.032 * Math.pow(t, 1.3) + (0.002 + 0.009 * t) * saw;
+      const x = cx + Math.sin(a) * R, z = cz + Math.cos(a) * R;
+      position.push(x, y, z);
+      const wt = 0.8 * Math.pow(t, 1.2), wl = Math.min(1, Math.max(0, 0.5 + (x - cx) / 0.22));
+      const w = [[root, 1 - wt], [thighL, wt * wl], [thighR, wt * (1 - wl)]].filter(([, v]) => v > 0.004);
+      let left = 255;
+      for (let c = 0; c < 4; c++) {
+        const e = w[c];
+        const q = !e ? 0 : c === w.length - 1 ? left : Math.round(e[1] * 255);
+        skinIndex.push(e ? e[0] : 0); skinWeight.push(q); left -= q;
+      }
+    }
+    if (r > 0) for (let k = 0; k < SEG; k++) {
+      const a = (r - 1) * SEG + k, b = (r - 1) * SEG + (k + 1) % SEG, c = r * SEG + k, d = r * SEG + (k + 1) % SEG;
+      index.push(a, c, b, b, c, d);
+    }
+  }
+  return { position: Float32Array.from(position), uv: new Float32Array(position.length / 3 * 2), skinIndex: Uint8Array.from(skinIndex), skinWeight: Uint8Array.from(skinWeight), index: Uint32Array.from(index) };
+}
+
 // the pieces each build ships with (src/assets/kit): see README for the list
 // T-shirt and shorts (MakeHuman's female_casualsuit02 cut, recoloured in game), trainers
 // with socks (shoes05), and three real hair meshes
-const KIT = ['female_casualsuit02', 'shoes05', 'short02', 'ponytail01', 'afro01'];
+const KIT = ['shoes05', 'short02', 'ponytail01', 'afro01'];
 const GARMENTS = { male: KIT, female: KIT };
 
 build('male', { muscle: 0.4, height: 0.3, targetHeight: 1.86 });

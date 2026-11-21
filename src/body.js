@@ -58,14 +58,16 @@ export function getBody(gender) {
 // tools/build-bodies.mjs. Listed one by one so the bundler ships each file.
 const KIT_FILES = {
   male: {
-    outfit: new URL('./assets/kit/male-female_casualsuit02.json', import.meta.url).href,
+    outfit: new URL('./assets/kit/male-tennis-shorts.json', import.meta.url).href,
+    outfitSkirt: new URL('./assets/kit/male-tennis-skirt.json', import.meta.url).href,
     shoes: new URL('./assets/kit/male-shoes05.json', import.meta.url).href,
     short: new URL('./assets/kit/male-short02.json', import.meta.url).href,
     long: new URL('./assets/kit/male-ponytail01.json', import.meta.url).href,
     curly: new URL('./assets/kit/male-afro01.json', import.meta.url).href,
   },
   female: {
-    outfit: new URL('./assets/kit/female-female_casualsuit02.json', import.meta.url).href,
+    outfit: new URL('./assets/kit/female-tennis-shorts.json', import.meta.url).href,
+    outfitSkirt: new URL('./assets/kit/female-tennis-skirt.json', import.meta.url).href,
     shoes: new URL('./assets/kit/female-shoes05.json', import.meta.url).href,
     short: new URL('./assets/kit/female-short02.json', import.meta.url).href,
     long: new URL('./assets/kit/female-ponytail01.json', import.meta.url).href,
@@ -73,7 +75,7 @@ const KIT_FILES = {
   },
 };
 const KIT_TEXTURES = {
-  outfitNormal: new URL('./assets/kit/textures/outfit_female_casualsuit02_normal.jpg', import.meta.url).href,
+  outfitNormal: new URL('./assets/kit/textures/outfit_male_casualsuit06_normal.jpg', import.meta.url).href,
   shoes: new URL('./assets/kit/textures/outfit_shoes05.jpg', import.meta.url).href,
   short: new URL('./assets/kit/textures/hair_short02.png', import.meta.url).href,
   long: new URL('./assets/kit/textures/hair_ponytail01.png', import.meta.url).href,

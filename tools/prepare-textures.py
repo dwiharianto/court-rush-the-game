@@ -8,6 +8,8 @@ from PIL import Image
 
 DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'assets', 'kit', 'textures')
 for name in sorted(os.listdir(DIR)):
+    if name.startswith('skin_detail'):
+        continue  # made by prepare-skin.py at its own size
     path = os.path.join(DIR, name)
     im = Image.open(path)
     if im.mode == 'P':

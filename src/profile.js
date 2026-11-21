@@ -12,11 +12,12 @@ export const BUILDS = [['male', 'Male'], ['female', 'Female']];
 export const HAIR_STYLES = [['short', 'Short'], ['buzz', 'Buzz'], ['long', 'Ponytail'], ['curly', 'Curly'], ['none', 'None']];
 export const HEADWEAR = [['none', 'None'], ['cap', 'Cap'], ['visor', 'Visor'], ['headband', 'Headband']];
 export const WRISTBANDS = [['none', 'None'], ['on', 'Wristbands']];
+export const BOTTOMS = [['shorts', 'Shorts'], ['skirt', 'Skirt']];
 
 export const DEFAULT_PROFILE = {
   name: 'L. MARLOW', build: 'male',
   skin: 0xd9a37c, hair: 0x2a1d14, hairStyle: 'short', headwear: 'none', wristbands: 'on',
-  shirt: 0x2f9e58, shorts: 0x2452a6, shoes: 0xf4f4f4,
+  shirt: 0x2f9e58, shorts: 0x2452a6, shoes: 0xf4f4f4, bottoms: 'shorts',
 };
 
 // Invented names for the CPU. Coined surnames on purpose, so no real player's
@@ -51,6 +52,7 @@ export function sanitize(p = {}) {
     shirt: pick(PALETTE.shirt, p.shirt, d.shirt),
     shorts: pick(PALETTE.shorts, p.shorts, d.shorts),
     shoes: pick(PALETTE.shoes, p.shoes, d.shoes),
+    bottoms: pick(BOTTOMS.map((b) => b[0]), p.bottoms, d.bottoms),
   };
 }
 
@@ -69,17 +71,20 @@ export function kitFor(p, racketColor = 0x16181c) {
     build: p.build,
     skin: p.skin, hair: p.hair, hairStyle: p.hairStyle, headwear: p.headwear, wristbands: p.wristbands === 'on',
     headwearColor: dark ? 0xf4f4f4 : p.shirt,
-    shirt: p.shirt, shorts: p.shorts, shoes: p.shoes, racketColor,
+    shirt: p.shirt, shorts: p.shorts, shoes: p.shoes, bottoms: p.bottoms, racketColor,
   };
 }
 
 export function randomProfile(rng = Math.random) {
   const any = (list) => list[Math.floor(rng() * list.length)];
-  return sanitize({
+  const p = sanitize({
     name: DEFAULT_PROFILE.name, build: any(BUILDS)[0],
     skin: any(PALETTE.skin), hair: any(PALETTE.hair), hairStyle: any(HAIR_STYLES)[0], headwear: any(HEADWEAR)[0], wristbands: any(WRISTBANDS)[0],
     shirt: any(PALETTE.shirt), shorts: any(PALETTE.shorts), shoes: any(PALETTE.shoes),
   });
+  // most women wear a skirt, some shorts (from the other picks, so the random stream is unchanged)
+  p.bottoms = p.build === 'female' && (PALETTE.shirt.indexOf(p.shirt) + PALETTE.skin.indexOf(p.skin)) % 5 < 3 ? 'skirt' : 'shorts';
+  return p;
 }
 
 function colourDistance(a, b) {

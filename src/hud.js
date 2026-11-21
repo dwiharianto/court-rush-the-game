@@ -1,6 +1,6 @@
 // HTML overlay: scoreboard, centre message, timing label.
 import { BALL, NAMES } from './config.js';
-import { PALETTE, BUILDS, HAIR_STYLES, HEADWEAR, WRISTBANDS, cleanName } from './profile.js';
+import { PALETTE, BUILDS, HAIR_STYLES, HEADWEAR, WRISTBANDS, BOTTOMS, cleanName } from './profile.js';
 
 // The statistics table: the player's value, the stat, the opponent's value.
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -162,7 +162,7 @@ export function createHud(doc = document) {
   const hex = (c) => '#' + c.toString(16).padStart(6, '0');
   const ROWS = [
     ['build', 'Body', BUILDS],
-    ['shirt', 'Shirt', PALETTE.shirt], ['shorts', 'Shorts', PALETTE.shorts], ['shoes', 'Shoes', PALETTE.shoes],
+    ['shirt', 'Shirt', PALETTE.shirt], ['bottoms', 'Bottoms', BOTTOMS], ['shorts', 'Bottoms colour', PALETTE.shorts], ['shoes', 'Shoes', PALETTE.shoes],
     ['headwear', 'Headwear', HEADWEAR], ['wristbands', 'Wrists', WRISTBANDS], ['skin', 'Skin tone', PALETTE.skin], ['hair', 'Hair colour', PALETTE.hair],
     ['hairStyle', 'Hair', HAIR_STYLES],
   ];

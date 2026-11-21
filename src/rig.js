@@ -225,7 +225,9 @@ export function createBodyRig(body, options = {}) {
   const hairKey = { short: 'short', long: 'long', curly: 'curly' }[o.hairStyle];
   // under a cap short and curly hair is painted on; a ponytail still shows
   const hairGarment = kit && hairKey && !(o.headwear === 'cap' && hairKey !== 'long') ? kit[hairKey] : null;
-  const worn = kit ? [kit.outfit, kit.shoes].filter(Boolean) : [];
+  // the outfit: tee and shorts, or tank and pleated skirt
+  const outfit = kit ? (o.bottoms === 'skirt' && kit.outfitSkirt ? kit.outfitSkirt : kit.outfit) : null;
+  const worn = kit ? [outfit, kit.shoes].filter(Boolean) : [];
   // skin detail texture: pores, lips, the flush of the cheeks (MakeHuman, CC0)
   const skinMap = kit && arrays.uv && kit.textures[`skin_${body.gender}`];
   const { pos, col } = paint(body, prep, o, worn.length > 0, !!hairGarment, !!skinMap);
@@ -318,15 +320,15 @@ export function createBodyRig(body, options = {}) {
     return m;
   };
   let cloth = null;
-  if (kit && kit.outfit) {
-    // T-shirt on top (piece 0), shorts and waistband below, in the player's colours;
+  if (outfit) {
+    // top (piece 0), shorts or skirt below, in the player's colours;
     // the normal map keeps the fabric's folds, seams and hems
     const shirt = hex(o.shirt), shorts = hex(o.shorts);
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.88, normalMap: kit.textures.outfitNormal, side: THREE.DoubleSide,
     });
-    const m = garment(kit.outfit, material, (piece) => (piece === 0 ? shirt : shorts));
-    cloth = createCloth(m, kit.outfit.arrays, material);
+    const m = garment(outfit, material, (piece) => (piece === 0 ? shirt : shorts));
+    cloth = createCloth(m, outfit.arrays, material);
   }
   if (kit && kit.shoes) {
     // trainers in the chosen colour; the socks (top piece) stay white
@@ -367,7 +369,7 @@ export function createBodyRig(body, options = {}) {
   leftHand.position.copy(fistOffset('L').applyQuaternion(Ninv[byName['wrist.L']]));
   bone('wrist.L').add(leftHand);
 
-  addHeadwear(bone('head'), prep, o, !!hairGarment);
+  addHeadwear(bone('head'), prep, o, hairGarment, body);
   if (!(kit && kit.shoes)) for (const side of ['L', 'R']) addShoe(bone(`foot.${side}`), body, prep, side, o);
   if (o.wristbands) for (const side of ['L', 'R']) addWristband(bone(`lowerarm01.${side}`), prep, side, o, Ninv[byName[`lowerarm01.${side}`]]);
 
@@ -593,41 +595,148 @@ function addWristband(armBone, prep, side, o, Ninv) {
   armBone.add(band);
 }
 
-function addHeadwear(headBone, prep, o, hairMesh = false) {
+// Headwear fitted to the head: the shape is measured from the head (and the hair, where
+// it is worn under it) slice by slice, so a band sits snug all round. A band runs
+// higher over the forehead than at the back. The cap has a six-panel crown with seams
+// and a button, and a curved brim; the visor is a deep band and the same brim; the
+// headband is a terry band.
+function headOutline(body, hair, minY) {
+  const pts = [], A = body.arrays, P = body.parts, n = body.vertexCount || A.part.length;
+  for (let i = 0; i < n; i++) {
+    const pt = A.part[i];
+    if (pt === P.head || pt === P.scalp || pt === P.brows) pts.push([A.position[i * 3], A.position[i * 3 + 1], A.position[i * 3 + 2]]);
+  }
+  if (hair) for (let i = 0; i < hair.arrays.position.length / 3; i++) {
+    const y = hair.arrays.position[i * 3 + 1];
+    if (y > minY) pts.push([hair.arrays.position[i * 3], y, hair.arrays.position[i * 3 + 2]]);
+  }
+  return pts;
+}
+function makeFitter(pts, cx, cz, SEG) {
+  // the head's radius at an angle (0 = front) and height: the furthest point near that slice
+  pts.sort((p, q) => p[1] - q[1]);
+  const firstAbove = (y) => { let lo = 0, hi = pts.length; while (lo < hi) { const m = (lo + hi) >> 1; if (pts[m][1] < y) lo = m + 1; else hi = m; } return lo; };
+  return (y, band = 0.012) => {
+    const r = new Float32Array(SEG);
+    for (let i = firstAbove(y - band); i < pts.length && pts[i][1] <= y + band; i++) {
+      const [x, , z] = pts[i];
+      const a = Math.atan2(x - cx, z - cz);
+      const k = ((Math.round((a / (2 * Math.PI)) * SEG) % SEG) + SEG) % SEG;
+      r[k] = Math.max(r[k], Math.hypot(x - cx, z - cz));
+    }
+    if (r.some((v) => v > 0)) for (let it = 0; it < SEG && r.some((v) => !v); it++) for (let k = 0; k < SEG; k++) if (!r[k]) r[k] = Math.max(r[(k + 1) % SEG], r[(k + SEG - 1) % SEG]);
+    return r.map((_, k) => Math.max(r[k], (r[(k + 1) % SEG] + r[(k + SEG - 1) % SEG] + r[(k + 2) % SEG] + r[(k + SEG - 2) % SEG]) / 4));
+  };
+}
+function ringsMesh(rings, SEG, mat, closeTop = null, colours = null) {
+  const pos = [], col = [], idx = [];
+  rings.forEach((ring) => ring.forEach((p) => pos.push(...p)));
+  if (colours) colours.forEach((c) => col.push(...c));
+  for (let r = 0; r + 1 < rings.length; r++) for (let k = 0; k < SEG; k++) {
+    const a = r * SEG + k, b = r * SEG + (k + 1) % SEG, c = (r + 1) * SEG + k, d = (r + 1) * SEG + (k + 1) % SEG;
+    idx.push(a, b, c, b, d, c);
+  }
+  if (closeTop) {
+    const top = pos.length / 3, last = (rings.length - 1) * SEG;
+    pos.push(...closeTop);
+    if (colours) col.push(...colours[colours.length - 1]);
+    for (let k = 0; k < SEG; k++) idx.push(last + k, last + (k + 1) % SEG, top);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  if (colours) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = true;
+  return m;
+}
+function addHeadwear(headBone, prep, o, hairGarment = null, body = null) {
+  const hairMesh = !!hairGarment;
   const h = prep.headInfo;
   const origin = prep.head('head');
   const at = (v) => v.clone().sub(origin);
   const c = at(h.centre);
-  const r = Math.max(0.085, (h.top - h.centre.y) + 0.006);
-  const hw = new THREE.MeshStandardMaterial({ color: o.headwearColor, roughness: 0.8 });
+  const r = Math.max(0.085, (h.top - h.centre.y) + 0.006); // for the painted curls
   const hairMat = new THREE.MeshStandardMaterial({ color: o.hair, roughness: 0.9 });
-  if (o.headwear === 'cap') {
-    const crown = new THREE.Mesh(new THREE.SphereGeometry(r + 0.008, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), hw);
-    crown.scale.set(0.98, 0.78, 1.08);
-    crown.position.copy(c).add(new THREE.Vector3(0, 0.012, -0.004));
-    crown.rotation.x = -0.12;
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.006, 20, 1, false, -Math.PI / 2, Math.PI), hw);
-    brim.scale.set(1, 1, 1.15);
-    brim.position.copy(c).add(new THREE.Vector3(0, 0.02, (h.front - h.centre.z) - 0.035));
-    brim.rotation.x = 0.16;
-    for (const m of [crown, brim]) { m.castShadow = true; headBone.add(m); }
-  } else if (o.headwear === 'visor') {
-    // a band round the head and a brim, open on top
-    const band = new THREE.Mesh(new THREE.TorusGeometry(r * 0.99, 0.014, 6, 28), hw);
-    band.rotation.x = Math.PI / 2 - 0.12;
-    band.scale.set(0.9, 1.06, 1.4);
-    band.position.copy(c).add(new THREE.Vector3(0, 0.0, 0.004));
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.006, 20, 1, false, -Math.PI / 2, Math.PI), hw);
-    brim.scale.set(1, 1, 1.15);
-    brim.position.copy(c).add(new THREE.Vector3(0, -0.004, (h.front - h.centre.z) - 0.03));
-    brim.rotation.x = 0.16;
-    for (const m of [band, brim]) { m.castShadow = true; headBone.add(m); }
-  } else if (o.headwear === 'headband') {
-    const band = new THREE.Mesh(new THREE.TorusGeometry(r * 0.98, 0.012, 8, 28), hw);
-    band.rotation.x = Math.PI / 2 - 0.22;
-    band.scale.set(0.9, 1.06, 1);
-    band.position.copy(c).add(new THREE.Vector3(0, 0.022, 0.004));
-    headBone.add(band);
+  if (o.headwear && o.headwear !== 'none' && body) {
+    const SEG = 64;
+    const cx = 0, cz = h.centre.z;
+    // the band's line: across the middle of the forehead, lower at the back
+    const yFront = h.eyeY + (o.headwear === 'cap' ? 0.072 : 0.066), yBack = h.eyeY + (o.headwear === 'headband' ? 0.045 : 0.025);
+    const lineY = (k) => { const a = (k / SEG) * Math.PI * 2; return yBack + (yFront - yBack) * (1 + Math.cos(a)) / 2; };
+    const pts = headOutline(body, o.headwear === 'cap' && o.hairStyle !== 'long' ? null : hairGarment, yBack - 0.02);
+    const fit = makeFitter(pts, cx, cz, SEG);
+    const cache = new Map();
+    const radiusAt = (y) => { const key = Math.round(y * 400); if (!cache.has(key)) cache.set(key, fit(key / 400)); return cache.get(key); };
+    const ease = o.hairStyle === 'none' || hairMesh ? 0.004 : (SCALP[o.hairStyle] ?? 0.011) + 0.006; // painted hair sits out from the scalp
+    const ringAt = (lift, extra, k) => {
+      const y = lineY(k) + lift, a = (k / SEG) * Math.PI * 2, R = radiusAt(y)[k] + ease + extra;
+      return [cx + Math.sin(a) * R, y, cz + Math.cos(a) * R];
+    };
+    const mat = new THREE.MeshStandardMaterial({ color: o.headwearColor, roughness: o.headwear === 'headband' ? 1 : 0.78, side: THREE.DoubleSide, vertexColors: o.headwear === 'cap' });
+    const add = (mesh) => { mesh.position.sub(origin); headBone.add(mesh); return mesh; };
+    const bandH = o.headwear === 'visor' ? 0.034 : o.headwear === 'headband' ? 0.042 : 0.03;
+    const rings = [];
+    for (let r = 0; r <= 4; r++) rings.push(Array.from({ length: SEG }, (_, k) => ringAt(-bandH / 2 + (bandH * r) / 4, 0.002 + (o.headwear === 'headband' ? 0.004 * Math.sin((r / 4) * Math.PI) : 0), k)));
+    if (o.headwear === 'cap') {
+      // the crown: from the band up over the head, panels meeting at a button on top
+      let topY = -Infinity;
+      for (const p of pts) topY = Math.max(topY, p[1]);
+      const crown = [], colours = [];
+      const base = rings[rings.length - 1];
+      const seam = (k) => (Math.abs(((k / SEG) * 6) % 1 - 0.5) > 0.46 ? 0.8 : 1); // six panels: darker seams
+      const lift = ease + 0.007, peak = topY + lift;
+      let prev = base.map((p) => Math.hypot(p[0] - cx, p[2] - cz));
+      crown.push(base);
+      for (let r = 1; r <= 12; r++) {
+        const f = r / 12;
+        const ring = base.map((p, k) => {
+          const y = p[1] + (peak - p[1]) * Math.sin((f * Math.PI) / 2);
+          // the head's own outline at this height, a little out; never wider than below
+          let R = r === 12 ? 0.004 : radiusAt(Math.min(y, topY - 0.003))[k] + lift;
+          if (y > topY - 0.02) R = Math.min(R, prev[k] * Math.sqrt(Math.max(0, (peak - y) / Math.max(0.004, peak - y + 0.012))) + 0.004);
+          R = Math.min(R, prev[k]);
+          prev[k] = R;
+          const a = (k / SEG) * Math.PI * 2;
+          return [cx + Math.sin(a) * R, y, cz + Math.cos(a) * R];
+        });
+        crown.push(ring);
+      }
+      const all = [...rings, ...crown.slice(1)];
+      for (const ring of all) for (let k = 0; k < SEG; k++) colours.push([seam(k), seam(k), seam(k)]);
+      const topP = [cx, all[all.length - 1][0][1] + 0.003, cz];
+      add(ringsMesh(all, SEG, mat, topP, colours));
+      const button = new THREE.Mesh(new THREE.SphereGeometry(0.007, 10, 6), new THREE.MeshStandardMaterial({ color: o.headwearColor, roughness: 0.7 }));
+      button.position.set(...topP);
+      add(button);
+    } else add(ringsMesh(rings, SEG, mat));
+    if (o.headwear === 'cap' || o.headwear === 'visor') {
+      // the brim: from the front of the band, forward and curved down at the sides
+      const span = 0.36, rows = 6, cols = 28, bpos = [], bidx = [];
+      for (let i = 0; i <= cols; i++) {
+        const u = i / cols - 0.5, k = ((Math.round(u * span * SEG) % SEG) + SEG) % SEG;
+        const edge = rings[1][k]; // tucked into the band, just above its lower edge
+        const a = (k / SEG) * Math.PI * 2;
+        const len = (o.headwear === 'cap' ? 0.072 : 0.062) * Math.cos(u * Math.PI * 0.9) ** 0.6;
+        for (let j = 0; j <= rows; j++) {
+          const v = j / rows, d = len * v;
+          const droop = -0.005 * v * v - 0.016 * Math.abs(u) * v; // curved down at the sides
+          bpos.push(edge[0] + Math.sin(a) * (d - 0.002), edge[1] + droop - 0.008 * v, edge[2] + Math.cos(a) * (d - 0.002));
+        }
+      }
+      for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+        const q = i * (rows + 1) + j, r2 = (i + 1) * (rows + 1) + j;
+        bidx.push(q, r2, q + 1, q + 1, r2, r2 + 1);
+      }
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.Float32BufferAttribute(bpos, 3));
+      bg.setIndex(bidx);
+      bg.computeVertexNormals();
+      const brim = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ color: o.headwearColor, roughness: 0.75, side: THREE.DoubleSide }));
+      brim.castShadow = true;
+      add(brim);
+    }
   }
   if (hairMesh) return; // real hair is on
   if (o.hairStyle === 'long') {
@@ -637,7 +746,7 @@ function addHeadwear(headBone, prep, o, hairMesh = false) {
     tail.rotation.x = 0.35;
     tail.castShadow = true;
     headBone.add(tail);
-  } else if (o.hairStyle === 'curly') {
+  } else if (o.hairStyle === 'curly' && o.headwear !== 'cap') {
     for (let i = 0; i < 16; i++) { // a bumpy outline of curls
       const a = (i / 16) * Math.PI * 2;
       const m = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 6), hairMat);
@@ -658,10 +767,8 @@ function addHeadwear(headBone, prep, o, hairMesh = false) {
 //   ripple with a small flutter that grows with speed.
 // The springs are simulated per player on the CPU and passed in as uniforms.
 const CLOTH = {
-  shirtTop: 1.27, // rest-pose heights (m): the shirt hangs free below this...
+  shirtTop: 1.27, // the shirt hangs free from this far above its hem (shirtTop - shirtHem, m)
   shirtHem: 1.03,
-  shortsTop: 0.99, // ...and the shorts' legs below this
-  shortsHem: 0.87,
   sleeveFrom: 0.21, // sideways distance where the sleeves start
   loose: [0.018, 0.016], // stand-off at the hem: shirt, shorts
   stiffness: 90, damping: 7, // the hem spring (1/s^2, 1/s)
@@ -675,15 +782,26 @@ function createCloth(mesh, A, material) {
   const n = A.position.length / 3;
   const attr = new Float32Array(n * 3); // weight, sleeve, shorts
   const C = CLOTH;
+  // where each piece hangs free: measured on the garment (rest pose), so any cut works.
+  // The shirt from a little above its hem; shorts from about a leg's width above
+  // theirs; a skirt (piece 2) from just under its waistband
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < n; i++) {
-    const x = A.position[i * 3], y = A.position[i * 3 + 1];
+    const k = Math.min(2, A.piece[i]), x = A.position[i * 3], y = A.position[i * 3 + 1];
+    if (k === 0 && Math.abs(x) > C.sleeveFrom) continue;
+    lo[k] = Math.min(lo[k], y); hi[k] = Math.max(hi[k], y);
+  }
+  const top = [lo[0] + (C.shirtTop - C.shirtHem), lo[1] + 0.26, hi[2] - 0.03];
+  for (let i = 0; i < n; i++) {
+    const x = A.position[i * 3], y = A.position[i * 3 + 1], k = Math.min(2, A.piece[i]);
     let w = 0, sleeve = 0, shorts = 0;
-    if (A.piece[i] === 0) {
+    if (k === 0) {
       if (Math.abs(x) > C.sleeveFrom) sleeve = Math.min(1, (Math.abs(x) - C.sleeveFrom) / 0.12);
-      else w = Math.pow(Math.min(1, Math.max(0, (C.shirtTop - y) / (C.shirtTop - C.shirtHem))), 1.3);
+      else w = Math.pow(Math.min(1, Math.max(0, (top[0] - y) / (top[0] - lo[0]))), 1.3);
     } else {
       shorts = 1;
-      w = Math.min(1, Math.max(0, (C.shortsTop - y) / (C.shortsTop - C.shortsHem)));
+      w = Math.min(1, Math.max(0, (top[k] - y) / (top[k] - lo[k])));
+      if (k === 2) { w = Math.pow(w, 1.2); shorts = 0.6; } // a skirt swings more freely than shorts
     }
     attr[i * 3] = w; attr[i * 3 + 1] = sleeve; attr[i * 3 + 2] = shorts;
   }
