@@ -886,6 +886,69 @@ const EMOTE_FACE = {
   throw: (t) => (t < 0.62 ? { shout: 0.9, grimace: 0.4 } : { grimace: 0.7, sad: 0.45 }),
 };
 
+// ---------------------------------------------------------------- personal style
+// Every player moves a little differently: how low they stand and how quickly they
+// bounce, how they carry the racket when running, how big the finish of their strokes
+// is, how many times they bounce the ball before serving, and which small habits they
+// fall into between points. Drawn from a seed (the player's name), so it stays theirs.
+function styleRng(seed) {
+  let h = 2166136261;
+  for (const ch of String(seed ?? Math.random())) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return () => { h = (Math.imul(h, 1664525) + 1013904223) >>> 0; return h / 4294967296; };
+}
+function makeStyle(seed) {
+  const r = styleRng(seed);
+  const between = (a, b) => a + (b - a) * r();
+  return {
+    bounceHz: ANIM.idleHz * between(0.8, 1.25), bounceAmp: between(0.6, 1.4),
+    crouch: between(-0.08, 0.16), sway: between(0.5, 1.5), breathHz: between(0.22, 0.3),
+    armCarry: between(-0.2, 0.25), lean: between(-0.04, 0.08),
+    flair: between(0.6, 1.4), // how big the finish of a stroke is
+    serveBounces: 2 + Math.floor(r() * 2), servePeriod: between(0.38, 0.48),
+    habits: FIDGET_NAMES.map(() => 0.3 + r()), // how much each habit appeals
+    fidgety: between(0.6, 1.5), // how often
+  };
+}
+
+// Small habits between points, layered over the standing pose like the reactions.
+const FIDGETS = {
+  // the strings: racket up in front, a look and a straightening tug at them
+  strings: { dur: 2.4, pose(p, t) {
+    const u = Math.min(ease(t / 0.4), ease((2.4 - t) / 0.4)), tug = Math.max(0, Math.sin(t * 9)) * (t > 0.6 && t < 1.9 ? 1 : 0);
+    p.rShX += (0.85 - p.rShX) * u; p.rShZ += (0.15 - p.rShZ) * u; p.rElbow += (1.75 - p.rElbow) * u;
+    p.lShX += (0.95 - p.lShX) * u; p.lShZ += (0.05 - p.lShZ) * u; p.lElbow += (1.85 + 0.2 * tug - p.lElbow) * u;
+    p.headX += 0.35 * u; p.torsoX += 0.05 * u;
+    p.rkW = 1 - u; p.lGrip = 1 - u; p.lThroat = 1 - u;
+  } },
+  // a wipe of the brow with the wristband
+  wipe: { dur: 1.6, pose(p, t) {
+    const u = Math.min(ease(t / 0.3), ease((1.6 - t) / 0.35)), sweep = Math.sin(clamp((t - 0.35) / 0.8, 0, 1) * Math.PI);
+    p.lShX += (1.95 - p.lShX) * u; p.lShZ += (0.25 + 0.25 * sweep - p.lShZ) * u; p.lElbow += (2.45 - p.lElbow) * u;
+    p.headX += 0.25 * u; p.headY += (sweep - 0.5) * 0.5 * u;
+    p.lGrip = 1 - u; p.lThroat = 1 - u;
+  } },
+  // loosen up: a twist of the back each way and a roll of the shoulders
+  loosen: { dur: 2.2, pose(p, t) {
+    const u = Math.min(ease(t / 0.3), ease((2.2 - t) / 0.4)), tw = Math.sin(t * 5.4);
+    p.torsoY += 0.38 * tw * u; p.headY -= 0.2 * tw * u;
+    p.lShX += 0.25 * Math.max(0, Math.sin(t * 5.4 + 1)) * u; p.rShX += 0.25 * Math.max(0, Math.sin(t * 5.4 + 2.5)) * u;
+    p.lGrip = 1 - u; p.lThroat = 1 - u;
+  } },
+  // a breath and a look up, then back to business
+  lookUp: { dur: 1.9, pose(p, t) {
+    const u = Math.min(ease(t / 0.45), ease((1.9 - t) / 0.5));
+    p.headX -= 0.45 * u; p.headY += 0.25 * Math.sin(t * 1.6) * u; p.torsoX -= 0.08 * u;
+    p.lShX -= 0.1 * u; p.rShX -= 0.05 * u;
+  } },
+  // up on the toes, staying lively
+  toes: { dur: 1.8, pose(p, t) {
+    const u = Math.min(ease(t / 0.2), ease((1.8 - t) / 0.3));
+    p.lift += 0.03 * Math.abs(Math.sin(t * 9)) * u;
+    p.lKnee += 0.08 * Math.sin(t * 18) * u; p.rKnee += 0.08 * Math.sin(t * 18) * u;
+  } },
+};
+const FIDGET_NAMES = Object.keys(FIDGETS);
+
 export function createCharacter(options = {}) {
   // a MakeHuman body when one is given (see rig.js), else the code-built figure
   const rig = options.body ? createBodyRig(options.body, options) : createFigure({ racket: true, ...options });
@@ -916,6 +979,11 @@ export function createCharacter(options = {}) {
   // on the body (the hitting arm stays exact while swinging, for clean contact)
   const entryFrom = makePose(), last = makePose(), spring = makePose(), springV = makePose();
   let prevAction = 'ready', prevT = 0, entryT = 1, springReady = false;
+  // personal style; habits between points; this swing's own flavour; the serve's ball bounces
+  const style = makeStyle(options.styleSeed);
+  let fidget = null, fidgetT = 0, fidgetIn = 1.5 + Math.random() * 2;
+  const swingVar = [0, 0, 0];
+  let serveBallY = 0, serveBounced = -1, onServeBounce = null;
 
   const L = rig.legs || { thigh: BODY.thigh, shin: BODY.shin, hipX: BODY.hipHalfWidth };
   const feet = [0, 1].map(() => ({ x: 0, z: 0, fx: 0, fz: 0, t: -1, dur: 0.2, h: 0.05, c: 0 }));
@@ -1074,13 +1142,17 @@ export function createCharacter(options = {}) {
     idle.lGrip = 1; idle.lThroat = 1; // both hands on the racket, the free one on the throat
     // the racket points at the opponent, head up (chest frame: the chest leans forward)
     idle.rkX = 0.05; idle.rkY = 0.76; idle.rkZ = 0.66; idle.rkW = 1;
-    const b = Math.sin(time * Math.PI * 2 * ANIM.idleHz);
-    const sway = Math.sin(time * 0.9);
-    idle.lKnee += b * 0.07; idle.rKnee += b * 0.07;
-    idle.lHip += b * 0.035; idle.rHip += b * 0.035;
+    const b = Math.sin(time * Math.PI * 2 * style.bounceHz) * style.bounceAmp;
+    const sway = Math.sin(time * 0.9) * style.sway;
+    idle.lKnee += b * 0.07 + style.crouch; idle.rKnee += b * 0.07 + style.crouch;
+    idle.lHip += b * 0.035 + style.crouch * 0.5; idle.rHip += b * 0.035 + style.crouch * 0.5;
     idle.rShX += b * 0.03; idle.lShX += b * 0.03;
     idle.torsoZ = sway * 0.04; idle.hipsYaw = sway * 0.05; idle.headY = -sway * 0.05;
     idle.lift = Math.max(0, -b) * 0.012;
+    // breathing: the chest rises and falls, faster when tired
+    const breath = Math.sin(time * Math.PI * 2 * (style.breathHz + 0.45 * tiredness(s)));
+    idle.torsoX += 0.018 * breath + style.lean; idle.headX -= 0.012 * breath;
+    idle.lShX += 0.015 * breath; idle.rShX += 0.015 * breath;
     // tired: deep, slow breaths, a lower stance and a forward slump
     const tired = tiredness(s);
     if (tired > 0) {
@@ -1141,7 +1213,8 @@ export function createCharacter(options = {}) {
     // the racket arm carries the racket in front and swings half as much
     const rMean = gaitMean('rShX', gw, backBlend), eMean = gaitMean('rElbow', gw, backBlend);
     run.rShX = 0.4 + 0.5 * (run.rShX - rMean);
-    run.rElbow = 1.2 + 0.5 * (run.rElbow - eMean);
+    run.rElbow = 1.2 + style.armCarry + 0.5 * (run.rElbow - eMean);
+    run.torsoX += style.lean * k;
     run.rShZ = 0.2;
 
     // side shuffle: legs open and close, body stays square to the net
@@ -1192,6 +1265,17 @@ export function createCharacter(options = {}) {
     } else if (acting) {
       sampleClip(CLIPS[s.action], s.actionT, clip);
       shapeStroke(clip, s);
+      // no two swings alike: after contact the finish turns further or less, rises
+      // higher or lower, and the knees drive more or less, around the player's own style
+      if (STROKES.has(s.action) && s.actionT > SWING.ideal) {
+        const u = ease((s.actionT - SWING.ideal) / 0.22) * style.flair;
+        clip.torsoY += swingVar[0] * 0.16 * u;
+        clip.rShX += swingVar[1] * 0.22 * u;
+        clip.headX += swingVar[2] * 0.08 * u;
+        const kd = swingVar[2] * 0.12 * u;
+        clip.lKnee -= kd; clip.rKnee -= kd;
+      }
+      if (s.action === 'serveReady') serveRitual(clip, s.actionT);
       actionBlend = 1;
       copyPose(out, clip);
       // legs keep running, or sliding, if the player swings on the move
@@ -1221,6 +1305,25 @@ export function createCharacter(options = {}) {
     }
     if (thrown) stepThrown(dt);
 
+    // habits between points, when standing still and not reacting
+    const calm = !acting && !emote && !held && speed < 0.25 && restBlend < 0.2 && prepBlend < 0.05;
+    if (fidget) {
+      fidgetT += dt;
+      const F = FIDGETS[fidget];
+      if (!calm || fidgetT >= F.dur) fidget = null;
+      else { copyPose(emotePose, out); F.pose(emotePose, fidgetT); blendPose(out, out, emotePose, Math.min(1, fidgetT / 0.12)); }
+    } else if (calm && s.resting) {
+      fidgetIn -= dt * 1.6 * style.fidgety;
+      if (fidgetIn <= 0) {
+        let total = 0;
+        for (const w of style.habits) total += w;
+        let pick = Math.random() * total, n = 0;
+        while (n < FIDGET_NAMES.length - 1 && (pick -= style.habits[n]) > 0) n++;
+        fidget = FIDGET_NAMES[n]; fidgetT = 0;
+        fidgetIn = 2.5 + Math.random() * 3;
+      }
+    } else fidgetIn = Math.max(fidgetIn, 0.8);
+
     // the face: a blink every few seconds, effort through a stroke, and the reaction's expression
     if (rig.setExpression) {
       blinkIn -= dt;
@@ -1234,7 +1337,12 @@ export function createCharacter(options = {}) {
     }
 
     // blend into a new action from wherever the body was
-    if (acting && (s.action !== prevAction || s.actionT < prevT)) { copyPose(entryFrom, last); entryT = 0; }
+    if (acting && (s.action !== prevAction || s.actionT < prevT)) {
+      copyPose(entryFrom, last); entryT = 0;
+      for (let n = 0; n < 3; n++) swingVar[n] = (Math.random() * 2 - 1);
+      serveBounced = -1;
+    }
+    if (s.action !== 'serveReady') serveBallY = 0;
     prevAction = s.action; prevT = s.actionT;
     if (entryT < 1) {
       entryT = Math.min(1, entryT + dt / ANIM.entryBlend);
@@ -1275,6 +1383,27 @@ export function createCharacter(options = {}) {
     }
     rig.applyGrip(out.lGrip, out.lThroat);
     if (rig.updateCloth) rig.updateCloth(dt);
+  }
+
+  // Before the serve: the ball bounced a few times, the player bent over it, the free
+  // hand pushing it down and catching it; then still, eyes on the opponent. The ball's
+  // drawn height comes from here (serveBallY, below the hand), the game's ball stays held.
+  function serveRitual(p, t) {
+    const start = 0.12, per = style.servePeriod, n = style.serveBounces;
+    const into = clamp((t - start) / 0.25, 0, 1) * clamp((start + n * per + 0.3 - t) / 0.3, 0, 1);
+    const k = ease(into);
+    p.torsoX += 0.4 * k; p.headX += 0.3 * k;
+    p.lKnee += 0.28 * k; p.rKnee += 0.28 * k; p.lHip += 0.16 * k; p.rHip += 0.16 * k;
+    const c = (t - start) / per;
+    serveBallY = 0;
+    if (c >= 0 && c < n) {
+      const u = c % 1, d = Math.abs(1 - 2 * u);
+      serveBallY = (SERVE_CFG.handY - 0.05) * (Math.pow(d, 0.75) - 1); // down to the court and back
+      const push = Math.pow(d, 6); // the hand dips to push the ball down and to catch it
+      p.lShX -= 0.18 * push; p.lElbow -= 0.35 * push;
+      const i = Math.floor(c);
+      if (u >= 0.5 && serveBounced < i) { serveBounced = i; if (onServeBounce) onServeBounce(); }
+    }
   }
 
   // The racket leaves the hand: a copy flies from where it was, tumbles to the court
@@ -1331,6 +1460,11 @@ export function createCharacter(options = {}) {
     get emoting() { return emote; },
     update,
     splitStep() { splitT = 0; },
+    // the serve's ball bounce: drawn height offset of the held ball, and a callback as it hits the court
+    get serveBallY() { return serveBallY; },
+    onServeBounce(fn) { onServeBounce = fn; },
+    // start a habit now (FIDGETS; for cutscenes and checks)
+    habit(name) { if (FIDGETS[name]) { fidget = name; fidgetT = 0; } },
     feet, // the foot planner's state (for checks)
     get lastPose() { return last; }, // the pose last applied (for checks)
     // world position of the racket head centre (for effects)

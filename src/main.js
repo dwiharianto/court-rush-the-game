@@ -872,10 +872,12 @@ async function boot() {
   try { await loadKit(); kitReady = true; } catch (err) { console.warn('Player kit did not load:', err); }
   const look = (p, racketColor) => ({
     ...kitFor(p, racketColor),
+    styleSeed: p.name, // their own way of moving (human.js)
     body: bodiesReady ? getBody(p.build) : null,
     kit: bodiesReady && kitReady ? getKit(p.build) : null,
   });
   const views = [createCharacter(look(me)), createCharacter(look(cpu, 0xb3261e))];
+  let serveBallY = 0;
   world.scene.add(views[0].object3d, views[1].object3d);
   // the ball kids get the players' bodies and real clothes too, in ball-kid kit, kid-sized
   if (bodiesReady) {
@@ -1196,6 +1198,11 @@ async function boot() {
   const lostRun = [0, 0];
   let reactTimer = 0;
   function hookView(side) {
+    // the ball bounced before the serve, heard where it lands
+    views[side].onServeBounce(() => {
+      const b = game.ball;
+      if (game.state === 'serveReady' && game.match.server === side) audio.play('bounce', { speed: 4.5, x: b.x, z: b.z });
+    });
     views[side].onEmoteEvent((ev) => {
       if (ev.type !== 'racketDown') return;
       audio.play('clatter', { x: ev.x, z: ev.z, speed: ev.speed });
@@ -1809,6 +1816,10 @@ async function boot() {
     wasLive = live;
     between(game.ball, prevBall, alpha, drawBall);
     if (!live) drawBall.visible = false;
+    // the server bounces the ball before serving (drawn only; the game's ball stays in hand),
+    // and the drawn ball eases back if the toss comes mid-bounce
+    serveBallY = game.state === 'serveReady' ? views[game.match.server].serveBallY : serveBallY * Math.max(0, 1 - dt * 30);
+    drawBall.y += serveBallY;
     if (!replaying) world.updateBall(drawBall, dt);
     if (!cut.holding) record(dt);
     updateMarker(dt);

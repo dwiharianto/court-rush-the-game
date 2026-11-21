@@ -426,7 +426,7 @@ export const SERVE = {
   receiverX: 2.9,
   receiverBehind: 0.9,
   readyDelay: 0.5, // before the human can toss
-  cpuDelay: 1.3, // before the CPU tosses
+  cpuDelay: 1.9, // before the CPU tosses (time for a few bounces of the ball)
   handY: 1.13, // ball held in the left hand, out in front of the front hip
   handSide: 0.37, // toward the hitting side (the stance is side-on)
   handFront: 0.48, // toward the net
