@@ -46,6 +46,7 @@
         <button id="sound" type="button">Sound: on</button>
         <button id="commentary" type="button">Commentary: on</button>
         <button id="marker" type="button">Landing marker: on</button>
+        <button id="graphics" type="button" class="graphics-btn">Graphics: High</button>
         <button id="quit" type="button">Quit match</button>
         <div class="menu-foot" id="pause-hint">P or Esc resumes, M turns sound on or off, V commentary</div>
       </div>
@@ -76,6 +77,7 @@
           <li><b>Strokes and serve:</b> adapted (retargeted and retimed) from <a href="https://github.com/jdpulgarin/Tennis-MoCap" target="_blank" rel="noopener">Tennis-MoCap</a> by J. D. Pulgarin-Giraldo, S. Garcia-Vega, L. G. Melo-Betancourt, S. Ramos-Bermudez, A. M. Alvarez-Meza and G. Castellanos, <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>. The adapted animations are shared under the same licence.</li>
           <li><b>Players, spectators and clothes:</b> built from <a href="http://www.makehumancommunity.org" target="_blank" rel="noopener">MakeHuman</a> models, CC0.</li>
           <li><b>Umpire and commentary voices:</b> generated with Piper text-to-speech from a voice model trained on <a href="https://www.openslr.org/60/" target="_blank" rel="noopener">LibriTTS</a> by H. Zen et al., <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.</li>
+          <li><b>Lighting:</b> image-based light from <a href="https://polyhaven.com/hdris" target="_blank" rel="noopener">Poly Haven</a> HDRIs (park, sunset, night), CC0, via the <a href="https://github.com/pmndrs/assets" target="_blank" rel="noopener">pmndrs/assets</a> package.</li>
           <li><b>3D engine:</b> <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a>, MIT.</li>
           <li><b>Everything else</b> (code, sounds, courts and venues) was made for Court Rush; its code is MIT licensed.</li>
         </ul>
@@ -181,10 +183,11 @@
             <div class="mn-links">
               <button id="howto-open" type="button" class="text-link">How to play</button>
               <button id="about-open" type="button" class="text-link">About</button>
+              <button id="graphics-menu" type="button" class="text-link graphics-btn">Graphics: High</button>
             </div>
           </aside>
         </div>
-        <div class="menu-credit">Free for everyone, non-commercial. Running: Bandai Namco Research Motion Dataset (CC BY-NC 4.0). Strokes: Tennis-MoCap, Pulgarin-Giraldo et al. (CC BY-SA 3.0). Bodies and kit: MakeHuman (CC0). Calls and commentary: Piper TTS, LibriTTS voices (CC BY 4.0).</div>
+        <div class="menu-credit">Free for everyone, non-commercial. Running: Bandai Namco Research Motion Dataset (CC BY-NC 4.0). Strokes: Tennis-MoCap, Pulgarin-Giraldo et al. (CC BY-SA 3.0). Bodies and kit: MakeHuman (CC0). Calls and commentary: Piper TTS, LibriTTS voices (CC BY 4.0). Lighting: Poly Haven HDRIs (CC0).</div>
       </div>
     </div>
     <script type="module" src="./src/main.js"></script>

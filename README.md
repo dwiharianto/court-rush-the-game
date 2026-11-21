@@ -25,6 +25,14 @@ npm run build    # static build in dist/
 
 Between points the players react. The winner of a point may pump a fist, or crouch and come up with the racket raised and a "come on!" after a break of serve or a long rally; at the end of the match the winner throws both arms up and jumps. The loser of a point they gave away bends over with hands on knees and shakes their head, or drops their head and shoulders; now and then, more often after a double fault, a lost game or a bad run, they slam the racket down onto the court (the umpire gives a racket-abuse warning) and stand with both hands on their head. Losing the match can end in a crouch with the head in the hands. Everything resets, racket back in hand, for the next point.
 
+## Graphics
+
+Rendering uses tone mapping that keeps colours true while taming bright highlights, image-based lighting from real-world HDR photos (a park by day, a sunset for evening sessions, night for the floodlights; Poly Haven, CC0, via the @pmndrs/assets package, with most of their colour taken out so the sky does not tint skin and crowds), fine generated surface detail on each court (grit on clay, blades on grass, sand in the acrylic), and a slightly stronger sun for clearer shadows. **Graphics: Low / Medium / High** (pause screen or start screen; touch devices start on Medium):
+
+- **Low:** straight to the screen, 1024 shadows: phones and older computers.
+- **Medium:** a gentle glow on the brightest highlights, smoothed edges (SMAA), 2048 shadows.
+- **High:** all of that plus ambient occlusion (the soft darkening where things meet), 4096 shadows and full resolution on high-density screens.
+
 ## Cutscenes
 
 Key moments are cut together like a TV broadcast, with letterbox bars, captions, a quick white flash between shots, a slight handheld drift on the cameras, and the bars sliding away at the end. Play waits meanwhile; Space, Enter, Escape or a click skips.
@@ -105,6 +113,7 @@ Customise player, on the start screen, opens a panel with a close-up of your pla
 | `src/career.js` | Career mode logic: the invented world, ageing, calendar, rankings, draws, simulation |
 | `src/story.js` | The career's story: coach, rival and agent, cards and choices |
 | `src/careerui.js` | The career hub screen and story cards |
+| `src/graphics.js` | Rendering: tone mapping, post-processing (ambient occlusion, glow, SMAA), quality levels |
 | `src/cutscene.js` | Cutscenes: shots, cinematic camera, letterbox and captions, trophy and confetti |
 | `src/themes.js` | Each event's look: court colours, time of day, venue colours, crowd size |
 | `src/crowd.js` | Spectators: the player bodies baked into crowd poses and drawn instanced |

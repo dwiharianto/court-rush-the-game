@@ -850,6 +850,9 @@ async function boot() {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const world = createWorld();
+  world.setRenderer(renderer);
+  const { createGraphics, QUALITY, QUALITY_ORDER } = await import('./graphics.js');
+  const gfx = createGraphics(renderer, world);
   if (import.meta.env.DEV) window.__world = world; // for checking the scene from the browser console
   const hud = createHud();
   const input = createInput();
@@ -1133,6 +1136,19 @@ async function boot() {
   }
   setMuted(muted);
   hud.onSound(() => setMuted(!muted));
+  // graphics quality: Low, Medium or High, on the pause and start screens; remembered on this device.
+  // Touch devices start on Medium, others on High.
+  let quality = null;
+  try { quality = localStorage.getItem('courtRush.graphics'); } catch { /* storage blocked */ }
+  if (!QUALITY[quality]) quality = document.body.classList.contains('touch') || matchMedia('(pointer: coarse)').matches ? 'medium' : 'high';
+  function setQuality(q) {
+    quality = q;
+    gfx.setQuality(q);
+    hud.setGraphics(QUALITY[q].label);
+    try { localStorage.setItem('courtRush.graphics', q); } catch { /* storage blocked */ }
+  }
+  setQuality(quality);
+  hud.onGraphics(() => setQuality(QUALITY_ORDER[(QUALITY_ORDER.indexOf(quality) + 1) % QUALITY_ORDER.length]));
   // commentary on or off: V, or the pause screen; remembered on this device
   let commentaryOn = true;
   try { commentaryOn = localStorage.getItem('courtRush.commentary') !== '0'; } catch { /* storage blocked */ }
@@ -1685,7 +1701,7 @@ async function boot() {
 
   function resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    renderer.setSize(w, h, false);
+    gfx.setSize(w, h);
     world.resize(w, h);
   }
   window.addEventListener('resize', resize);
@@ -1752,7 +1768,7 @@ async function boot() {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     if (paused) {
-      renderer.render(world.scene, world.camera);
+      gfx.render();
       requestAnimationFrame(frame);
       return;
     }
@@ -1826,7 +1842,7 @@ async function boot() {
     world.setClock(matchTime);
     world.setCinematic(cut.update(dt));
     world.updateCamera(dt, game.players[0].x, game.players[0].z);
-    renderer.render(world.scene, world.camera);
+    gfx.render();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

@@ -97,3 +97,66 @@ export function grassFloorTexture(color) {
   return t;
 }
 
+
+// A tiling normal map made from noise, for surface detail that catches the light:
+// 'grain' (clay: packed grit), 'blades' (grass: fine strokes along one direction),
+// 'sand' (acrylic hard court: very fine). Generated once, no download.
+export function surfaceNormalMap(kind, seed = 1, size = 256) {
+  const rnd = makeRng(seed);
+  const n = size * size;
+  const h = new Float32Array(n);
+  // a few octaves of smoothed value noise, wrapped so the map tiles
+  const octave = (cells, amp, stretch = 1) => {
+    const cx = cells, cy = Math.max(1, Math.round(cells / stretch));
+    const g = new Float32Array(cx * cy).map(() => rnd());
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const fx = (x / size) * cx, fy = (y / size) * cy;
+        const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+        const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+        const v = (i, j) => g[((j % cy) * cx) + (i % cx)];
+        const a = v(x0, y0) + (v(x0 + 1, y0) - v(x0, y0)) * sx;
+        const b = v(x0, y0 + 1) + (v(x0 + 1, y0 + 1) - v(x0, y0 + 1)) * sx;
+        h[y * size + x] += (a + (b - a) * sy) * amp;
+      }
+    }
+  };
+  if (kind === 'blades') {
+    octave(96, 0.6, 12); octave(192, 0.4, 20); octave(24, 0.25);
+  } else if (kind === 'sand') {
+    octave(128, 0.35); octave(48, 0.15);
+    for (let i = 0; i < n; i++) h[i] += rnd() * 0.25;
+  } else { // grain
+    octave(64, 0.45); octave(16, 0.3);
+    for (let i = 0; i < n; i++) h[i] += rnd() * 0.55;
+  }
+  const strength = { blades: 3.2, sand: 1.6, grain: 2.4 }[kind] || 2;
+  return canvasTextureRaw(size, size, (img) => {
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const at = (i, j) => h[((j + size) % size) * size + ((i + size) % size)];
+        const dx = (at(x + 1, y) - at(x - 1, y)) * strength, dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+        const len = Math.hypot(dx, dy, 1);
+        const o = (y * size + x) * 4;
+        img[o] = (-dx / len * 0.5 + 0.5) * 255;
+        img[o + 1] = (-dy / len * 0.5 + 0.5) * 255;
+        img[o + 2] = (1 / len * 0.5 + 0.5) * 255;
+        img[o + 3] = 255;
+      }
+    }
+  });
+}
+
+// a texture from raw RGBA pixels, kept linear (for normal maps)
+function canvasTextureRaw(w, h, fill) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  const data = g.createImageData(w, h);
+  fill(data.data);
+  g.putImageData(data, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}

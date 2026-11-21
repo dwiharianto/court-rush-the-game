@@ -6,9 +6,9 @@
 // lighting presets: hemisphere and sun (floodlights at night), the stadium's dark
 // backdrop, and the club's sky and distant hills
 export const LIGHTS = {
-  day: { hemiSky: 0xe6edff, hemiGround: 0x4a3830, hemi: 1.25, sun: 0xfff3e0, sunI: 2.3, pos: [-15, 26, 12], stadiumBg: 0x0b0e13, sky: [0xe3edf3, 0x6fa6da], hills: [0x4d6e4f, 0x8fa9a0] },
-  evening: { hemiSky: 0xffd9b8, hemiGround: 0x3a2a22, hemi: 0.95, sun: 0xffb070, sunI: 2.1, pos: [-34, 11, 4], stadiumBg: 0x120d0c, sky: [0xf6c18c, 0x5f78b0], hills: [0x3c4a3a, 0x9a8c90] },
-  night: { hemiSky: 0x9aa8c8, hemiGround: 0x14181e, hemi: 0.6, sun: 0xf4f7ff, sunI: 2.0, pos: [3, 34, 9], stadiumBg: 0x040507, sky: [0x18213a, 0x04060c], hills: [0x0f1612, 0x1d2433] },
+  day: { env: 'park', envI: 0.55, hemiSky: 0xe6edff, hemiGround: 0x4a3830, hemi: 1.25, sun: 0xfff3e0, sunI: 2.3, pos: [-15, 26, 12], stadiumBg: 0x0b0e13, sky: [0xe3edf3, 0x6fa6da], hills: [0x4d6e4f, 0x8fa9a0] },
+  evening: { env: 'sunset', envI: 0.5, hemiSky: 0xffd9b8, hemiGround: 0x3a2a22, hemi: 0.95, sun: 0xffb070, sunI: 2.1, pos: [-34, 11, 4], stadiumBg: 0x120d0c, sky: [0xf6c18c, 0x5f78b0], hills: [0x3c4a3a, 0x9a8c90] },
+  night: { env: 'night', envI: 0.4, hemiSky: 0x9aa8c8, hemiGround: 0x14181e, hemi: 0.6, sun: 0xf4f7ff, sunI: 2.0, pos: [3, 34, 9], stadiumBg: 0x040507, sky: [0x18213a, 0x04060c], hills: [0x0f1612, 0x1d2433] },
 };
 
 export const DEFAULT_THEME = {

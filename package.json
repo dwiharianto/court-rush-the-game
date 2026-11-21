@@ -11,6 +11,7 @@
     "tune": "node test/tune.js"
   },
   "dependencies": {
+    "@pmndrs/assets": "^1.7.0",
     "three": "^0.170.0"
   },
   "devDependencies": {

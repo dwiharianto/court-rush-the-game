@@ -4,7 +4,7 @@ import { COURT, ARENA, CLUB, WALLS, CAMERA, RENDER, LIGHT, COLORS, NAMES, BALL, 
 import { createBallKids } from './ballkids.js';
 import { DEFAULT_THEME, LIGHTS } from './themes.js';
 import { createFigure, POSES, makePose } from './human.js';
-import { canvasTexture, makeRng, noiseTexture, boardTexture, box, grassFloorTexture } from './gfx.js';
+import { canvasTexture, makeRng, noiseTexture, boardTexture, box, grassFloorTexture, surfaceNormalMap } from './gfx.js';
 import { buildClub } from './club.js';
 import { buildCrowd, bakeCrowd } from './crowd.js';
 
@@ -71,6 +71,18 @@ function buildCourt(scene) {
   clay.receiveShadow = true;
   scene.add(clay);
 
+  // fine surface detail that catches the light: grit on clay, blades on grass, sand in the acrylic
+  const detail = {};
+  const detailFor = (kind, rx, ry) => {
+    const key = `${kind}:${rx}:${ry}`;
+    if (!detail[key]) { const t = surfaceNormalMap(kind, kind.length * 7); t.repeat.set(rx, ry); detail[key] = t; }
+    return detail[key];
+  };
+  const DETAIL = {
+    clay: { court: ['grain', 14, 30, 0.55], floor: ['grain', 70, 90, 0.4], rough: 1 },
+    grass: { court: ['blades', 18, 40, 0.5], floor: ['blades', 70, 90, 0.4], rough: 0.92 },
+    hard: { court: ['sand', 24, 52, 0.35], floor: ['sand', 70, 90, 0.3], rough: 0.68 },
+  };
   // textures for each surface, built the first time it is chosen
   const looks = {
     clay: () => {
@@ -149,6 +161,15 @@ function buildCourt(scene) {
       clay.material.needsUpdate = true;
       current = name;
       floor.material.map = (atClub && t.clubFloor) || t.floor;
+      const D = DETAIL[name];
+      if (D) {
+        const [ck, cx, cy, cs] = D.court, [fk, fx, fy, fs] = D.floor;
+        clay.material.normalMap = detailFor(ck, cx, cy);
+        clay.material.normalScale.set(cs, cs);
+        clay.material.roughness = D.rough;
+        floor.material.normalMap = detailFor(fk, fx, fy);
+        floor.material.normalScale.set(fs, fs);
+      }
       floor.material.needsUpdate = true;
       fitFloor();
     },
@@ -759,6 +780,49 @@ export function createWorld() {
   let marks = SURFACES[DEFAULT_SURFACE].marks;
   const lights = buildLights(scene);
   let theme = DEFAULT_THEME;
+  // Image-based lighting: small CC0 Poly Haven HDRIs (via @pmndrs/assets), loaded in the
+  // background; until one arrives (or if it cannot load) the plain lights carry the scene.
+  let renderer = null, pmrem = null, envName = null;
+  const envs = {};
+  const ENV_FILES = {
+    park: () => import('@pmndrs/assets/hdri/park.exr'),
+    sunset: () => import('@pmndrs/assets/hdri/sunset.exr'),
+    night: () => import('@pmndrs/assets/hdri/night.exr'),
+  };
+  async function loadEnv(name) {
+    if (!renderer || !ENV_FILES[name]) return null;
+    if (!envs[name]) {
+      envs[name] = (async () => {
+        const [{ EXRLoader }, mod] = await Promise.all([import('three/examples/jsm/loaders/EXRLoader.js'), ENV_FILES[name]()]);
+        const tex = await new EXRLoader().setDataType(THREE.FloatType).loadAsync(mod.default);
+        // keep the light's softness and direction but drop most of its colour: a vivid
+        // blue sky otherwise tints skin and the crowd
+        const d = tex.image.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const y = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+          d[i] = y + (d[i] - y) * 0.25; d[i + 1] = y + (d[i + 1] - y) * 0.25; d[i + 2] = y + (d[i + 2] - y) * 0.25;
+        }
+        tex.needsUpdate = true;
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        pmrem = pmrem || new THREE.PMREMGenerator(renderer);
+        const env = pmrem.fromEquirectangular(tex).texture;
+        tex.dispose();
+        return env;
+      })().catch((err) => { console.warn('Environment light did not load:', err); return null; });
+    }
+    return envs[name];
+  }
+  function applyEnv() {
+    const L = LIGHTS[theme.light] || LIGHTS.day;
+    envName = L.env;
+    loadEnv(L.env).then((env) => {
+      if (!env || envName !== L.env) return;
+      scene.environment = env;
+      scene.environmentIntensity = L.envI * (venue === 'club' ? 1 : 0.75); // less sky inside the stadium
+      // the sky light now comes partly from the image: the plain fill steps back
+      lights.hemi.intensity = L.hemi * 0.55;
+    });
+  }
 
   const camera = new THREE.PerspectiveCamera(CAMERA.fov, CAMERA.baseAspect, CAMERA.near, CAMERA.far);
   const target = new THREE.Vector3(...CAMERA.target);
@@ -850,7 +914,7 @@ export function createWorld() {
       lights.hemi.groundColor.set(L.hemiGround);
       lights.hemi.intensity = L.hemi;
       lights.sun.color.set(L.sun);
-      lights.sun.intensity = L.sunI;
+      lights.sun.intensity = L.sunI * 1.1; // a little stronger: clearer shadows to shape bodies and the court
       lights.sun.position.set(...L.pos);
       court.setHardColors(theme.hard, theme.hardFloor);
       boards.setColors(theme.wall, theme.stand, theme.accent);
@@ -858,7 +922,12 @@ export function createWorld() {
       boards.crowd.setFill(theme.fill);
       club.crowd.setFill(theme.fill);
       if (venue !== 'club') scene.background = new THREE.Color(L.stadiumBg);
+      if (scene.environment) lights.hemi.intensity = L.hemi * 0.55;
+      applyEnv();
     },
+    // the renderer, for building the image-based lighting
+    setRenderer(r) { renderer = r; applyEnv(); },
+    get sun() { return lights.sun; },
     // the spectators react to a point: 0..1
     cheer(i) { (venue === 'club' ? club.crowd : boards.crowd).cheer(i); },
     // the spectators become real bodies once those have loaded: { male, female }, and the rig builder
