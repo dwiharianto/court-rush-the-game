@@ -10,29 +10,47 @@ export function createCutscenes(doc, scene) {
   const el = doc.createElement('div');
   el.id = 'cine';
   el.className = 'hidden';
-  el.innerHTML = `<div class="cine-bar top"></div><div class="cine-bar bottom"></div>
+  el.innerHTML = `<div class="cine-vignette"></div><div class="cine-flash"></div>
+    <div class="cine-bar top"></div><div class="cine-bar bottom"></div>
     <div class="cine-tag"></div>
-    <div class="cine-cap"><div class="cine-title"></div><div class="cine-sub"></div></div>
+    <div class="cine-cap"><div class="cine-kicker"></div><div class="cine-title"></div><div class="cine-sub"></div></div>
+    <div class="cine-card"></div>
     <div class="cine-skip">Space to skip</div>`;
   doc.body.appendChild(el);
   const tagEl = el.querySelector('.cine-tag'), titleEl = el.querySelector('.cine-title'), subEl = el.querySelector('.cine-sub');
-  const capEl = el.querySelector('.cine-cap');
+  const capEl = el.querySelector('.cine-cap'), kickerEl = el.querySelector('.cine-kicker');
+  const flashEl = el.querySelector('.cine-flash'), cardEl = el.querySelector('.cine-card');
+  let clock = 0; // for the handheld drift
 
   let shots = null, i = 0, t = 0, onDone = null, hold = false;
 
-  function showShot(s) {
+  let capTimer = 0;
+  function showShot(s, first) {
     tagEl.textContent = s.tag || '';
     tagEl.classList.toggle('on', !!s.tag);
-    titleEl.textContent = s.caption ? s.caption[0] : '';
-    subEl.textContent = s.caption ? s.caption[1] || '' : '';
-    capEl.classList.remove('on');
-    // captions slide in a beat after the shot starts
-    if (s.caption) setTimeout(() => capEl.classList.add('on'), 250);
+    const sameCap = s.caption && titleEl.textContent === s.caption[0] && capEl.classList.contains('on');
+    if (!sameCap) {
+      capEl.classList.remove('on');
+      clearTimeout(capTimer);
+      kickerEl.textContent = s.caption ? s.caption[2] || '' : '';
+      titleEl.textContent = s.caption ? s.caption[0] : '';
+      subEl.textContent = s.caption ? s.caption[1] || '' : '';
+      // captions slide in a beat after the shot starts
+      if (s.caption) capTimer = setTimeout(() => capEl.classList.add('on'), first ? 450 : 250);
+    }
+    cardEl.innerHTML = s.card || '';
+    cardEl.classList.toggle('on', !!s.card);
+    // a cut between shots: a quick white flash, unless the shot asks for a plain cut
+    if (!first && s.transition !== 'cut') {
+      flashEl.classList.remove('go');
+      void flashEl.offsetWidth;
+      flashEl.classList.add('go');
+    }
   }
-  function startShot() {
+  function startShot(first = false) {
     t = 0;
     const s = shots[i];
-    showShot(s);
+    showShot(s, first);
     if (s.start) s.start();
   }
   function finish() {
@@ -41,9 +59,12 @@ export function createCutscenes(doc, scene) {
     if (s && s.end) s.end();
     for (let k = i + 1; k < shots.length; k++) if (shots[k].skipped) shots[k].skipped();
     shots = null;
-    el.classList.add('hidden');
     capEl.classList.remove('on');
+    cardEl.classList.remove('on');
+    // the bars slide away, then the broadcast picture returns
+    el.classList.add('out');
     doc.body.classList.remove('cinematic');
+    setTimeout(() => { if (!shots) { el.classList.add('hidden'); el.classList.remove('out'); } }, 380);
     const done = onDone;
     onDone = null;
     if (done) done();
@@ -117,6 +138,40 @@ export function createCutscenes(doc, scene) {
   }
   function stopConfetti() { confettiOn = false; confetti.visible = false; }
 
+  // photographers in the stands: little bursts of white light
+  const flashTex = (() => {
+    const c = doc.createElement('canvas'); c.width = c.height = 32;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(0.35, 'rgba(255,255,255,0.6)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, 32, 32);
+    return new THREE.CanvasTexture(c);
+  })();
+  const flashes = [];
+  for (let k = 0; k < 36; k++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+    sp.scale.setScalar(0.9);
+    sp.visible = false;
+    scene.add(sp);
+    flashes.push({ sp, t: Math.random() * 2, life: 0 });
+  }
+  let flashBox = null;
+  function stepFlashes(dt) {
+    if (!flashBox) return;
+    for (const f of flashes) {
+      f.t -= dt;
+      if (f.t <= 0) {
+        // a new photo somewhere in the stands
+        const b = flashBox[Math.floor(Math.random() * flashBox.length)];
+        f.sp.position.set(b[0] + Math.random() * (b[1] - b[0]), b[2] + Math.random() * (b[3] - b[2]), b[4] + Math.random() * (b[5] - b[4]));
+        f.life = 0.12;
+        f.t = 0.3 + Math.random() * 1.8;
+        f.sp.visible = true;
+      }
+      if (f.life > 0) { f.life -= dt; f.sp.material.opacity = Math.max(0, f.life / 0.12); } else f.sp.visible = false;
+    }
+  }
+
   return {
     // shots: [{ dur, camera(t) -> { pos, target, fov }, caption?: [title, sub], tag?, start?(), frame?(t, dt), end?() }]
     play(list, { done = null, holdGame = true } = {}) {
@@ -125,13 +180,14 @@ export function createCutscenes(doc, scene) {
       i = 0;
       onDone = done;
       hold = holdGame;
-      el.classList.remove('hidden');
+      el.classList.remove('hidden', 'out');
       doc.body.classList.add('cinematic');
-      startShot();
+      startShot(true);
     },
     // advance; the camera for this frame, or null when no cutscene is playing
     update(dt) {
       stepConfetti(dt);
+      stepFlashes(dt);
       if (!shots) return null;
       t += dt;
       let s = shots[i];
@@ -143,12 +199,21 @@ export function createCutscenes(doc, scene) {
         s = shots[i];
       }
       if (s.frame) s.frame(t, dt);
-      return s.camera(t);
+      const cam = s.camera(t, Math.min(1, t / s.dur));
+      // a cameraman's hands: a slow drift, more on the close shots
+      clock += dt;
+      const h = (s.handheld ?? 1) * 0.035;
+      if (h) {
+        cam.target = [cam.target[0] + Math.sin(clock * 0.9) * h, cam.target[1] + Math.sin(clock * 1.3 + 1) * h * 0.6, cam.target[2] + Math.cos(clock * 0.7) * h];
+      }
+      return cam;
     },
     skip: finish,
     get active() { return !!shots; },
     get holding() { return !!shots && hold; },
     get replaying() { return !!shots && !!shots[i] && !!shots[i].replay; },
     trophy, startConfetti, stopConfetti,
+    // boxes [x0, x1, y0, y1, z0, z1] where the photographers sit, or null to stop
+    setFlashes(boxes) { flashBox = boxes; if (!boxes) for (const f of flashes) f.sp.visible = false; },
   };
 }

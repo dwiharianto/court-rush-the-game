@@ -27,12 +27,12 @@ Between points the players react. The winner of a point may pump a fist, or crou
 
 ## Cutscenes
 
-Key moments get a short cinematic, with letterbox bars and a caption, while play waits (Space, Enter, Escape or a click skips it):
+Key moments are cut together like a TV broadcast, with letterbox bars, captions, a quick white flash between shots, a slight handheld drift on the cameras, and the bars sliding away at the end. Play waits meanwhile; Space, Enter, Escape or a click skips.
 
-- **Break of serve:** when you break, a close-up of your celebration ("BREAK OF SERVE").
-- **Replays:** after a rally of ten shots or more, the point again at less than half speed from a low camera on the sideline ("REPLAY"), at most every other game.
-- **Match won:** a slow orbit round you as you celebrate ("GAME, SET AND MATCH" and the score).
-- **Title won:** in a tournament or career final, the trophy ceremony follows: you lift the trophy overhead, confetti falls and the crowd gives an ovation ("CHAMPION" and the event's name).
+- **Match won:** the match point again in slow motion (along the sideline, then a cut to a low angle behind whoever struck the last ball, with the sounds played back), then you celebrating ("GAME, SET AND MATCH"), the crowd on its feet, your opponent's reaction, and a result card with the score, aces, winners and longest rally.
+- **Title won:** in a tournament or career final, the trophy ceremony comes before the card: the trophy lifted overhead from a low camera, photographers' flashes in the stands, confetti and an ovation, then a crane shot rising away ("CHAMPION").
+- **Break of serve:** when you break, the break point again in slow motion, then your celebration ("BREAK OF SERVE").
+- **Replays:** after a rally of ten shots or more, its last few seconds again in slow motion from both angles ("REPLAY"), at most every other game.
 
 ## Line judges
 

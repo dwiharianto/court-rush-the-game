@@ -1197,10 +1197,9 @@ async function boot() {
       views[l].emote(Math.random() < 0.25 ? 'throw' : 'headInHands');
       // your win: the match cutscene, and the trophy if it was a final
       if (w === 0) {
-        const G = game.match.games;
-        const shots = [celebrateShot(0, 4.2, ['GAME, SET AND MATCH', `${me.name}  ${G[0]}-${G[1]}`])];
-        if (currentRound === 'FINAL' && (matchMode === 'tournament' || matchMode === 'career')) shots.push(trophyShot(currentTitle));
-        setTimeout(() => cut.play(shots, { done: () => input.clear() }), 300);
+        const title = currentRound === 'FINAL' && (matchMode === 'tournament' || matchMode === 'career') ? currentTitle : null;
+        // a moment more of the point is recorded first, for the replay
+        setTimeout(() => cut.play(matchWonShots(title), { done: () => input.clear() }), 900);
       }
       return;
     }
@@ -1225,8 +1224,10 @@ async function boot() {
     // key moments: breaking serve gets a close-up; a long rally gets a slow-motion replay
     const gamesNow = game.match.games[0] + game.match.games[1];
     if (breakOfServe && w === 0) {
-      if (le) views[l].emote(le);
-      cut.play([celebrateShot(0, 2.6, ['BREAK OF SERVE', `${me.name} breaks ${cpu.name}`], 'comeOn')], { done: () => input.clear() });
+      reactTimer = setTimeout(() => {
+        if (game.state !== 'pointOver') return;
+        cut.play(breakShots(), { done: () => { input.clear(); if (le) views[l].emote(le); } });
+      }, 700);
       return;
     }
     if (e.rallyHits >= 10 && gamesNow - lastReplayAt >= 2 && recT - serveAt < 9) {
@@ -1235,7 +1236,7 @@ async function boot() {
       // let a moment more of the point be recorded, then show it again
       reactTimer = setTimeout(() => {
         if (game.state !== 'pointOver') return;
-        cut.play(replayShots(from, recT), { done: () => { input.clear(); if (we) views[w].emote(we); if (le) views[l].emote(le); } });
+        cut.play(replayShots(from, recT, { maxSource: 5.5 }), { done: () => { input.clear(); if (we) views[w].emote(we); if (le) views[l].emote(le); } });
       }, 700);
       return;
     }
@@ -1246,39 +1247,115 @@ async function boot() {
     }, 350);
   }
 
-  // ---- cutscenes (cutscene.js): the shots for each moment
+  // ---- cutscenes (cutscene.js): the shots for each moment, cut together like a broadcast
   const cut = createCutscenes(document, world.scene);
-  if (import.meta.env.DEV) window.__cut = { cut, shots: () => ({ celebrateShot, trophyShot, replayShots }) }; // for checking from the console
-  // the last few seconds of play, for replays: both players and the ball as drawn
-  const rec = [];
+  if (import.meta.env.DEV) window.__cut = { cut, seq: () => ({ matchWonShots, breakShots, replayShots, playerShot, crowdShot, trophyShots, resultCard }) }; // for checking from the console
+  // the last few seconds of play, for replays: both players and the ball as drawn, and the sounds
+  const rec = [], recPending = [];
   let recT = 0, serveAt = 0, lastReplayAt = -99;
   function record(dt) {
     recT += dt;
-    rec.push({ t: recT, p: [{ ...drawP[0] }, { ...drawP[1] }], b: { x: drawBall.x, y: drawBall.y, z: drawBall.z, visible: drawBall.visible } });
-    while (rec.length && rec[0].t < recT - 10) rec.shift();
+    rec.push({ t: recT, p: [{ ...drawP[0] }, { ...drawP[1] }], b: { x: drawBall.x, y: drawBall.y, z: drawBall.z, visible: drawBall.visible }, ev: recPending.splice(0) });
+    while (rec.length && rec[0].t < recT - 12) rec.shift();
   }
-  // a slow orbit round a player, in front of them
-  function celebrateShot(side, dur, caption, emote = null) {
+  const easeIO = (u) => u * u * (3 - 2 * u);
+  const STANDS = {
+    stadium: [[-15, -10.4, 1.6, 4.4, -18, 14], [10.4, 15, 1.6, 4.4, -18, 14]],
+    club: [[-15, -11.4, 0.8, 2.6, -10, 10], [11.4, 15, 0.8, 2.6, -10, 10]],
+  };
+  // an orbit in front of a player: a0..a1 round from straight on, r0..r1 away
+  function playerShot(side, dur, caption, { emote = null, a0 = -0.6, a1 = 0.6, r0 = 5.2, r1 = 4.3, y = 1.7, ty = 1.25, fov = 38, start = null } = {}) {
     return {
       dur, caption,
-      start() { if (emote) { views[side].endEmote(); views[side].emote(emote); } },
-      camera(t) {
-        const p = game.players[side], u = t / dur;
-        const a = p.facing - 0.6 + 1.2 * u, r = 5.4 - 0.9 * u;
-        return { pos: [p.x + Math.sin(a) * r, 1.7 + 0.2 * u, p.z + Math.cos(a) * r], target: [p.x, 1.25, p.z], fov: 38 };
+      start() { if (emote) { views[side].endEmote(); views[side].emote(emote); } if (start) start(); },
+      camera(t, u) {
+        const p = game.players[side], e = easeIO(u);
+        const a = p.facing + a0 + (a1 - a0) * e, r = r0 + (r1 - r0) * e;
+        return { pos: [p.x + Math.sin(a) * r, y + 0.15 * e, p.z + Math.cos(a) * r], target: [p.x, ty, p.z], fov };
       },
     };
   }
-  // the trophy: lifted overhead, confetti, an ovation; a low camera looking up
-  function trophyShot(eventName) {
+  // the crowd on its feet: low on the court, panning along the stands
+  function crowdShot(dur) {
+    return {
+      dur, handheld: 1.5,
+      start() { world.cheer(1); },
+      camera(t, u) {
+        const club = world.venue === 'club', e = easeIO(u);
+        return { pos: [5.2, 1.0, 3 - 4 * e], target: [13, club ? 1.6 : 3.0, -5 + 9 * e], fov: 44 };
+      },
+    };
+  }
+  // the point again, slowed down: along the sideline, then a cut to a low angle behind the
+  // player who struck the last ball as it goes; the sounds play back with it
+  function replayShots(from, to, { tag = 'REPLAY', speed = 0.45, maxSource = 5 } = {}) {
+    from = Math.max(from, to - maxSource);
+    let k = rec.findIndex((f) => f.t >= from);
+    if (k < 0) k = 0;
+    let lastHit = null;
+    for (let j = k; j < rec.length && rec[j].t <= to; j++) for (const ev of rec[j].ev) if (ev.type === 'hit') lastHit = { t: rec[j].t, side: ev.side };
+    const split = lastHit && lastHit.t - from > 1 ? lastHit.t - 0.2 : from;
+    const tgt = [0, 0.9, 0];
+    let ball = { x: 0, y: 1, z: 0, visible: false };
+    function play(at, dt) {
+      while (k < rec.length - 1 && rec[k + 1].t <= at) {
+        k++;
+        for (const ev of rec[k].ev) {
+          if (ev.type === 'hit') audio.play('strike', { kind: ev.kind, power: ev.kmh / 140, x: ev.x, z: ev.z });
+          else if (ev.type === 'bounce') audio.play('bounce', { speed: ev.v, x: ev.x, z: ev.z });
+        }
+      }
+      const f = rec[k];
+      if (!f) return;
+      views[0].update(dt * speed, f.p[0]);
+      views[1].update(dt * speed, f.p[1]);
+      world.updateBall(f.b, dt * speed);
+      ball = f.b;
+      const bx = ball.visible ? ball.x : tgt[0], bz = ball.visible ? ball.z : tgt[2];
+      tgt[0] += (bx * 0.35 - tgt[0]) * Math.min(1, dt * 3);
+      tgt[2] += (bz - tgt[2]) * Math.min(1, dt * 3);
+    }
+    const shots = [];
+    if (split > from) {
+      shots.push({
+        dur: (split - from) / speed, tag, replay: true,
+        start() { world.setFxHold(true); for (const v of views) v.endEmote(); },
+        frame(t, dt) { play(from + t * speed, dt); },
+        // just inside the side wall, above the line judges
+        camera() { return { pos: [9.2, 2.7, tgt[2] * 0.85 + 2.5], target: [tgt[0], 0.8, tgt[2]], fov: 50 }; },
+        end() { world.setFxHold(false); },
+      });
+    }
+    const side = lastHit ? lastHit.side : 0;
+    shots.push({
+      dur: (to - split) / speed, tag, replay: true,
+      start() { world.setFxHold(true); for (const v of views) v.endEmote(); },
+      frame(t, dt) { play(split + t * speed, dt); },
+      camera(t, u) {
+        const p = game.players[side], sgn = Math.sign(p.z) || 1, e = easeIO(u);
+        return { pos: [p.x * 0.6 + 1.2, 1.25 + 0.5 * e, p.z + sgn * (4.2 + 1.5 * e)], target: [ball.visible ? ball.x * 0.6 : 0, 0.9, ball.visible ? ball.z : 0], fov: 46 };
+      },
+      end() { world.setFxHold(false); },
+    });
+    return shots;
+  }
+  // the trophy: lifted overhead (photographers' flashes, confetti, an ovation), then a crane up and away
+  function trophyShots(eventName) {
+    const caption = ['CHAMPION', eventName, 'A TITLE FOR ' + me.name];
     const cleanup = () => {
       cut.trophy.visible = false;
       cut.stopConfetti();
+      cut.setFlashes(null);
       views[0].setRacketVisible(true);
       views[0].endEmote();
     };
-    return {
-      dur: 6.5, caption: ['CHAMPION', eventName],
+    const hold = () => {
+      views[0].getLeftHand(cut.trophy.position);
+      cut.trophy.position.y += 0.03;
+      cut.trophy.rotation.y = game.players[0].facing;
+    };
+    return [{
+      dur: 4.4, caption,
       start() {
         const v = views[0], p = game.players[0];
         v.endEmote();
@@ -1286,47 +1363,59 @@ async function boot() {
         v.emote('trophy');
         cut.trophy.visible = true;
         cut.startConfetti(p.x, p.z);
+        cut.setFlashes(STANDS[world.venue] || STANDS.stadium);
         react('ovation');
       },
-      frame() {
-        views[0].getLeftHand(cut.trophy.position);
-        cut.trophy.position.y += 0.03;
-        cut.trophy.rotation.y = game.players[0].facing;
+      frame: hold,
+      camera(t, u) {
+        const p = game.players[0], e = easeIO(u);
+        const a = p.facing + 0.7 - 0.7 * e, r = 4.4 - 0.6 * e;
+        return { pos: [p.x + Math.sin(a) * r, 0.85, p.z + Math.cos(a) * r], target: [p.x, 1.8, p.z], fov: 46 - 4 * e };
       },
-      camera(t) {
-        const p = game.players[0], u = t / 6.5;
-        const a = p.facing + 0.7 - 0.9 * u, r = 4.2;
-        return { pos: [p.x + Math.sin(a) * r, 0.9, p.z + Math.cos(a) * r], target: [p.x, 1.75, p.z], fov: 46 };
+    }, {
+      dur: 3.4, caption, handheld: 0.4,
+      frame: hold,
+      camera(t, u) {
+        const p = game.players[0], e = easeIO(u);
+        const a = p.facing - 0.4 - 0.5 * e, r = 6 + 9 * e;
+        return { pos: [p.x + Math.sin(a) * r, 2 + 7 * e, p.z + Math.cos(a) * r], target: [p.x, 1.4, p.z], fov: 44 };
       },
       end: cleanup,
+      skipped: cleanup,
+    }];
+  }
+  // the result, as a broadcast card over a slow wide shot
+  function resultCard(won, title) {
+    const G = game.match.games, S = game.stats;
+    const row = (side) => `<div class="cc-row${(won ? 0 : 1) === side ? ' win' : ''}"><span>${(side ? cpu.name : me.name).replace(/[<>&]/g, '')}</span><b>${G[side]}</b></div>`;
+    const card = `<div class="cc-event">${(currentTitle || NAMES.tour).replace(/[<>&]/g, '')}</div>
+      <div class="cc-round">${currentRound && currentRound !== 'EXHIBITION' ? currentRound : 'EXHIBITION'}</div>
+      ${row(0)}${row(1)}
+      <div class="cc-stats"><div><b>${S.aces[0]}-${S.aces[1]}</b>Aces</div><div><b>${S.winners[0]}-${S.winners[1]}</b>Winners</div><div><b>${S.longestRally}</b>Longest rally</div></div>
+      ${title ? '<div class="cc-badge">CHAMPION</div>' : ''}`;
+    return {
+      dur: 4, card, handheld: 0,
+      camera(t, u) { const a = 0.5 + 0.5 * u; return { pos: [Math.sin(a) * 26, 13, Math.cos(a) * 26], target: [0, 0, 0], fov: 40 }; },
     };
   }
-  // the point again at less than half speed, from a low camera on the sideline
-  function replayShots(from, to) {
-    const speed = 0.45;
-    let k = rec.findIndex((f) => f.t >= from);
-    if (k < 0) k = 0;
-    const tgt = [0, 0.9, 0];
-    return [{
-      dur: Math.min(9, (to - from) / speed), tag: 'REPLAY', replay: true,
-      start() { world.setFxHold(true); for (const v of views) v.endEmote(); },
-      frame(t, dt) {
-        const at = from + t * speed;
-        while (k < rec.length - 1 && rec[k + 1].t <= at) k++;
-        const f = rec[k];
-        if (!f) return;
-        views[0].update(dt * speed, f.p[0]);
-        views[1].update(dt * speed, f.p[1]);
-        world.updateBall(f.b, dt * speed);
-        // follow the ball, gently
-        const bx = f.b.visible ? f.b.x : 0, bz = f.b.visible ? f.b.z : tgt[2];
-        tgt[0] += (bx * 0.35 - tgt[0]) * Math.min(1, dt * 3);
-        tgt[2] += (bz - tgt[2]) * Math.min(1, dt * 3);
-      },
-      // just inside the side wall (in front of the stands and the club bleachers), above the line judges
-      camera() { return { pos: [9.2, 2.7, tgt[2] * 0.85 + 2.5], target: [tgt[0], 0.8, tgt[2]], fov: 50 }; },
-      end() { world.setFxHold(false); },
-    }];
+  // your match: the match point again, you, the crowd, your opponent, the trophy for a title, the card
+  function matchWonShots(title) {
+    const G = game.match.games;
+    return [
+      ...replayShots(serveAt - 0.2, recT, { tag: 'MATCH POINT', maxSource: 4 }),
+      playerShot(0, 3.3, ['GAME, SET AND MATCH', `${me.name} wins ${G[0]}-${G[1]}`, currentTitle || 'EXHIBITION'], { emote: 'arms', start: () => world.cheer(1) }),
+      crowdShot(2.2),
+      playerShot(1, 1.8, null, { emote: 'headInHands', a0: 0.4, a1: 0.1, r0: 4.6, r1: 4.0, y: 1.3, ty: 0.9 }),
+      ...(title ? trophyShots(title) : []),
+      resultCard(true, !!title),
+    ];
+  }
+  // your break of serve: the break point again, then you
+  function breakShots() {
+    return [
+      ...replayShots(serveAt - 0.2, recT, { tag: 'BREAK POINT', maxSource: 3.5 }),
+      playerShot(0, 2.6, ['BREAK OF SERVE', `${me.name} breaks ${cpu.name}`], { emote: 'comeOn', start: () => world.cheer(0.8) }),
+    ];
   }
 
   // Players grunt now and then: often on serves, smashes and big forehands, rarely on touch shots.
@@ -1433,6 +1522,7 @@ async function boot() {
           lastHit[e.side] = e;
           if (e.kind === 'serve') audio.hush(); // play is on: finish the sentence, then quiet
           if (e.kind === 'serve') serveAt = recT; // a replay starts from the serve
+          recPending.push({ type: 'hit', side: e.side, kind: e.kind, kmh: e.kmh, x: game.players[e.side].x, z: game.players[e.side].z });
           if (e.kind === 'serve' && e.kmh >= 185) say('bigServe', 0.3, 0.5);
           world.setSpeed(e.kmh);
           audio.play('strike', {
@@ -1471,6 +1561,7 @@ async function boot() {
           break;
         case 'bounce':
           if (e.n === 1) lastBounce = e;
+          recPending.push({ type: 'bounce', x: e.x, z: e.z, v: e.v });
           world.addBounceMark(e.x, e.z);
           audio.play('bounce', { speed: e.v, x: e.x, z: e.z });
           break;
@@ -1692,6 +1783,8 @@ async function boot() {
     const replaying = cut.replaying;
     between(game.players[0], prevP[0], alpha, drawP[0]);
     between(game.players[1], prevP[1], alpha, drawP[1]);
+    // while a cutscene holds play the players stand still (their reactions need that)
+    if (cut.holding) for (const d of drawP) { d.vx = 0; d.vz = 0; d.slide = null; }
     if (!replaying) { views[0].update(dt, drawP[0]); views[1].update(dt, drawP[1]); }
     // when a point (or a fault) ends, that ball becomes a dead ball for the ball kids
     // to fetch; the next serve uses a fresh one

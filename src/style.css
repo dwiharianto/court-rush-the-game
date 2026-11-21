@@ -584,3 +584,31 @@ body.touch #howto #controls-touch { display: block; }
 body.touch .cine-skip::after { content: ' (or tap)'; }
 body.cinematic #scoreboard, body.cinematic #message, body.cinematic #touch, body.cinematic #pause-btn,
 body.cinematic #power, body.cinematic #timing, body.cinematic #challenge-btn { visibility: hidden; }
+/* cutscene polish: vignette, cut flashes, the bars leaving, the result card */
+.cine-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.45)); }
+.cine-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.cine-flash.go { animation: cine-flash 0.32s ease-out; }
+@keyframes cine-flash { 0% { opacity: 0.75; } 100% { opacity: 0; } }
+#cine.out .cine-bar { animation: cine-bar-out 0.36s ease-in both; }
+#cine.out .cine-vignette, #cine.out .cine-skip, #cine.out .cine-tag { opacity: 0; transition: opacity 0.3s; }
+@keyframes cine-bar-out { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+.cine-kicker { font-size: clamp(11px, 1.2vw, 14px); font-weight: 800; letter-spacing: 0.3em; color: #cfe1f5; margin-bottom: 6px; text-transform: uppercase; }
+.cine-kicker:empty { display: none; }
+.cine-title { position: relative; padding-left: 16px; }
+.cine-title::before { content: ''; position: absolute; left: 0; top: 6%; bottom: 6%; width: 6px; border-radius: 3px; background: #d8f23a; }
+.cine-card {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -44%) scale(0.96); opacity: 0; transition: opacity 0.45s, transform 0.45s;
+  width: min(520px, 86vw); padding: 18px 22px; border-radius: 12px; background: rgba(10, 13, 19, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); color: #dfe7f1;
+}
+.cine-card.on { opacity: 1; transform: translate(-50%, -50%); }
+.cc-event { font-size: 11px; letter-spacing: 0.28em; color: #9fb3c8; font-weight: 800; text-align: center; }
+.cc-round { margin: 4px 0 12px; font-size: 22px; font-weight: 900; font-style: italic; color: #fff; text-align: center; }
+.cc-row { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 8px 10px; border-radius: 7px; font-weight: 800; letter-spacing: 0.04em; }
+.cc-row + .cc-row { margin-top: 6px; }
+.cc-row.win { background: rgba(216, 242, 58, 0.12); color: #fff; }
+.cc-row.win span::after { content: '  WINNER'; font-size: 10px; letter-spacing: 0.2em; color: #d8f23a; }
+.cc-row b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.cc-badge { margin-top: 12px; text-align: center; font-weight: 900; letter-spacing: 0.3em; color: #10140a; background: #d8f23a; border-radius: 6px; padding: 7px; }
+.cc-stats { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; font-size: 11px; color: #9fb3c8; }
+.cc-stats b { display: block; font-size: 16px; color: #fff; }
