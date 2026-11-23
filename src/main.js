@@ -1171,6 +1171,8 @@ async function boot() {
     if (paused) resume(); else pause();
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+  // phones stop the audio when the app is left or the screen locks; any tap or key brings it back
+  for (const ev of ['pointerdown', 'touchend', 'keydown']) document.addEventListener(ev, () => audio.wake(), { capture: true, passive: true });
   window.addEventListener('blur', pause);
 
   // The crowd: applause sized to the point. Clean winners and long rallies get more;

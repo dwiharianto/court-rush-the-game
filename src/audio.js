@@ -593,17 +593,38 @@ export function createAudio(options = {}) {
 
   const SFX = { strike, bounce, net, cord, slide, plant, effort, wall, clatter };
 
+  // start the audio again if the browser stopped it (only works inside a user gesture)
+  function wake() {
+    if (!ctx || options.context || paused) return;
+    if (ctx.state === 'running' || ctx.state === 'closed') return;
+    try { Promise.resolve(ctx.resume()).catch(() => {}); } catch { /* resume refused */ }
+    // older iPhones only start once a sound is played inside the gesture: a silent one
+    try {
+      const s = ctx.createBufferSource();
+      s.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      s.connect(ctx.destination);
+      s.start(0);
+    } catch { /* not needed */ }
+  }
+
   return {
     // Browsers only allow audio after a user gesture, so this runs on Play.
     unlock() {
       if (!ctx) {
         const Ctor = options.context ? null : window.AudioContext || window.webkitAudioContext;
         if (!options.context && !Ctor) return;
+        // iPhones mute web audio while the ring/silent switch is on silent unless the
+        // page says it plays media, as a video would
+        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* not supported */ }
         ctx = options.context || new Ctor();
         build();
       }
-      if (ctx.state === 'suspended' && !paused && !options.context) ctx.resume();
+      wake();
     },
+    // Called on every tap or key press: phones suspend audio when the app is left, the
+    // screen locks or a call comes in (iOS reports 'interrupted'), and only a user
+    // gesture may start it again.
+    wake,
     // name: strike | bounce | net | cord | slide | plant | effort; opts: { kind, power, speed, side, x, z }
     play(name, opts = {}) {
       if (!ctx || (ctx.state !== 'running' && !options.context) || !SFX[name]) return;
