@@ -11,6 +11,9 @@ of others (motion capture shared by researchers, open body models, open-source
 voices and code; see Credits), and its own code is open source under the MIT
 License, so anyone can learn from it or build on it.
 
+**Play it:** https://dwiharianto.github.io/court-rush-the-game/ (rebuilt from
+`main` on every push by `.github/workflows/pages.yml`).
+
 Built with Vite, vanilla JavaScript and Three.js.
 
 ```bash
