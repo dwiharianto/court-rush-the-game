@@ -686,11 +686,16 @@ export function createGame(options = {}) {
 
     if (g.state === 'serveReady' && serving) {
       // shuffle along the baseline on the correct side of the centre mark
+      // (real steps: it eases into the move and out of it, and the body sees the speed)
       const sx = serverSideX();
-      human.x += input.x * PLAYER.speed * 0.4 * dt;
+      const want = input.x * PLAYER.speed * SERVE.shuffleSpeed;
+      const dv = want - human.vx, maxDv = SERVE.shuffleAccel * dt;
+      human.vx += Math.max(-maxDv, Math.min(maxDv, dv));
+      human.vz = 0;
+      human.x += human.vx * dt;
       const d = Math.max(SERVE.minX, Math.min(SERVE.maxX, human.x * sx));
+      if (d * sx !== human.x) human.vx = 0; // reached the end of the allowed stretch
       human.x = d * sx;
-      human.vx = human.vz = 0;
       holdBall(human);
       if (press && g.timer >= SERVE.readyDelay) {
         startToss();

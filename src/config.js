@@ -423,6 +423,8 @@ export const SERVE = {
   standBehind: 0.45, // behind the baseline
   minX: 0.25, // the human server may shuffle along the baseline between these
   maxX: 3.8,
+  shuffleSpeed: 0.3, // of the player's top speed, stepping along the baseline before serving
+  shuffleAccel: 9, // m/s², so the steps start and stop instead of gliding
   receiverX: 2.9,
   receiverBehind: 0.9,
   readyDelay: 0.5, // before the human can toss
