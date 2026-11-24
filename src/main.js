@@ -9,6 +9,7 @@ import { createTournament, nextOpponent, recordResult, levelFor, roundName, brac
 import { createCareerUI } from './careerui.js';
 import { createCutscenes } from './cutscene.js';
 import { themeForEvent, DEFAULT_THEME } from './themes.js';
+import { Vector3 } from 'three';
 
 const NO_INPUT = { x: 0, y: 0, drive: false, slice: false, lob: false, challenge: false };
 const TOSS_VY = Math.sqrt(2 * BALL.gravity * (SERVE.tossApex - SERVE.tossY0));
@@ -1731,6 +1732,7 @@ async function boot() {
   // render interpolation: positions one physics step back, blended toward the latest
   const prevP = [{ x: 0, z: 0 }, { x: 0, z: 0 }], drawP = [{}, {}];
   const prevBall = { x: 0, y: 0, z: 0 }, drawBall = {};
+  const handPos = new Vector3();
   function snapshot() {
     game.players.forEach((p, i) => { prevP[i].x = p.x; prevP[i].z = p.z; });
     prevBall.x = game.ball.x; prevBall.y = game.ball.y; prevBall.z = game.ball.z;
@@ -1827,6 +1829,16 @@ async function boot() {
     // and the drawn ball eases back if the toss comes mid-bounce
     serveBallY = game.state === 'serveReady' ? views[game.match.server].serveBallY : serveBallY * Math.max(0, 1 - dt * 30);
     drawBall.y += serveBallY;
+    // walking to a new spot before serving, the ball goes along in the left hand
+    if (game.state === 'serveReady') {
+      const carry = views[game.match.server].serveCarry;
+      if (carry > 0.01) {
+        views[game.match.server].getLeftHand(handPos);
+        drawBall.x += (handPos.x - drawBall.x) * carry;
+        drawBall.y += (handPos.y - 0.03 - drawBall.y) * carry;
+        drawBall.z += (handPos.z - drawBall.z) * carry;
+      }
+    }
     if (!replaying) world.updateBall(drawBall, dt);
     if (!cut.holding) record(dt);
     updateMarker(dt);

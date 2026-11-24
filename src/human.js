@@ -1070,6 +1070,7 @@ export function createCharacter(options = {}) {
   // smoothing: a short blend into each new action, and critically damped springs
   // on the body (the hitting arm stays exact while swinging, for clean contact)
   const entryFrom = makePose(), last = makePose(), spring = makePose(), springV = makePose();
+  let prevActing = false;
   let prevAction = 'ready', prevT = 0, entryT = 1, springReady = false;
   // personal style; habits between points; this swing's own flavour; the serve's ball bounces
   const style = makeStyle(options.styleSeed);
@@ -1176,11 +1177,12 @@ export function createCharacter(options = {}) {
     const sf = Math.sin(s.facing), cf = Math.cos(s.facing);
     const fwd = s.vx * sf + s.vz * cf; // along the facing direction (toward the net)
     const side = s.vx * cf - s.vz * sf; // toward the figure's left
-    const acting = s.action && s.action !== 'ready' && CLIPS[s.action];
-    const sliding = !!s.slide;
-    // the server picking a spot on the baseline: the legs step, the rest holds the stance
+    // the server picking a spot on the baseline leaves the stance and walks there like
+    // anyone would (turned to the way they are going), then turns back and settles
     const serveStepping = s.action === 'serveReady' && speed > 0.15;
     serveStepBlend = smooth(serveStepBlend, serveStepping ? 1 : 0, 10, dt);
+    const acting = s.action && s.action !== 'ready' && CLIPS[s.action] && !serveStepping;
+    const sliding = !!s.slide;
     if (s.action !== 'serveReady' || s.action !== prevAction || serveStepping) serveStill = 0;
     else serveStill += dt;
 
@@ -1193,7 +1195,7 @@ export function createCharacter(options = {}) {
 
     // a slow sideways move is a side shuffle facing the net; faster ones turn and run
     const lateral = speed > 0.3 ? Math.abs(side) / speed : 0;
-    const wantShuffle = !sliding && (!acting || s.action === 'serveReady') && speed > 0.3 && speed < ANIM.shuffleMax && lateral > 0.7 ? 1 : 0;
+    const wantShuffle = !sliding && !acting && s.action !== 'serveReady' && speed > 0.3 && speed < ANIM.shuffleMax && lateral > 0.7 ? 1 : 0;
     shuffleBlend = smooth(shuffleBlend, wantShuffle, 7, dt);
 
     // a slide locks its direction when it starts
@@ -1322,16 +1324,13 @@ export function createCharacter(options = {}) {
     shuffle.lHip = 0.55; shuffle.rHip = 0.55;
     shuffle.torsoX = 0.35; shuffle.torsoZ = clamp(-side * 0.03, -0.12, 0.12);
     shuffle.lift = 0.035 * Math.abs(Math.sin(shufflePhase * 2));
-    if (s.action === 'serveReady') {
-      // the server walks it: shorter, more upright steps than a ready-position shuffle
-      // the stance is side-on, so along the baseline the legs swing fore and aft, as in a walk
-      shuffle.lHipZ = 0.1; shuffle.rHipZ = 0.1;
-      shuffle.lHip = 0.12 + 0.3 * ss; shuffle.rHip = 0.12 - 0.3 * ss;
-      shuffle.lKnee = 0.18 + 0.45 * Math.max(0, ss); shuffle.rKnee = 0.18 + 0.45 * Math.max(0, -ss);
-      shuffle.lift = 0.02 * Math.abs(Math.sin(shufflePhase * 2));
-    }
 
     blendPose(loco, idle, run, runBlend);
+    if (s.action === 'serveReady') {
+      // walking to a serving spot: the free hand carries the ball, the racket hangs by the side
+      loco.lGrip = 0; loco.lThroat = 0;
+      loco.rShX = 0.12 + 0.12 * Math.sin(phase); loco.rShZ = 0.12; loco.rElbow = 0.35; loco.rkW = 0;
+    }
     // spent between points: hands on the knees, catching breath
     restBlend = smooth(restBlend, s.resting && speed < 0.3 ? clamp((tired - 0.35) / 0.35, 0, 1) : 0, 3, dt);
     legBlend = smooth(legBlend, clamp(speed / 0.8, 0, 1) * (1 - shuffleBlend), 10, dt);
@@ -1381,13 +1380,12 @@ export function createCharacter(options = {}) {
         clip.lKnee -= kd; clip.rKnee -= kd;
       }
       if (s.action === 'serveReady') {
-        if (serveStepping) serveBounced = -1; // the ball bounces start again once settled
         serveRitual(clip, Math.min(s.actionT, serveStill));
       }
       actionBlend = 1;
       copyPose(out, clip);
       // legs keep running, or sliding, if the player swings on the move
-      const legW = DIVES.has(s.action) ? 1 : (1 - 0.8 * runBlend) * (1 - slideBlend) * (1 - (s.action === 'serveReady' ? serveStepBlend : 0));
+      const legW = DIVES.has(s.action) ? 1 : (1 - 0.8 * runBlend) * (1 - slideBlend);
       for (const key of LEG_KEYS) out[key] = loco[key] + (clip[key] - loco[key]) * legW;
     } else {
       // ease back from the last clip pose into locomotion
@@ -1445,13 +1443,14 @@ export function createCharacter(options = {}) {
     }
 
     // blend into a new action from wherever the body was
-    if (acting && (s.action !== prevAction || s.actionT < prevT)) {
+    if (acting && (s.action !== prevAction || s.actionT < prevT || !prevActing)) {
       copyPose(entryFrom, last); entryT = 0;
       for (let n = 0; n < 3; n++) swingVar[n] = (Math.random() * 2 - 1);
       serveBounced = -1;
     }
     if (s.action !== 'serveReady') serveBallY = 0;
-    prevAction = s.action; prevT = s.actionT;
+    prevAction = s.action; prevT = s.actionT; prevActing = !!acting;
+    if (serveStepping) serveBounced = -1; // the ball bounces start again once settled
     if (entryT < 1) {
       entryT = Math.min(1, entryT + dt / ANIM.entryBlend);
       const u = entryT * entryT * (3 - 2 * entryT);
@@ -1570,6 +1569,8 @@ export function createCharacter(options = {}) {
     splitStep() { splitT = 0; },
     // the serve's ball bounce: drawn height offset of the held ball, and a callback as it hits the court
     get serveBallY() { return serveBallY; },
+    // 0 to 1: how far the server is walking to a new spot (the ball is then carried in the hand)
+    get serveCarry() { return serveStepBlend; },
     onServeBounce(fn) { onServeBounce = fn; },
     // start a habit now (FIDGETS; for cutscenes and checks)
     habit(name) { if (FIDGETS[name]) { fidget = name; fidgetT = 0; } },
